@@ -2,15 +2,15 @@
 
 ## 启动
 
-在仓库根目录执行：
+在仓库根目录、已激活 `botorch` 环境（见根目录 `environment.yml`）下执行：
 
 ```bash
-./botorch/bin/python electrolyte_opt/bayesian_optimization/run.py --port 8765
+python bayesian_optimization/run.py --port 8765
 ```
 
-浏览器打开 <http://127.0.0.1:8765>。服务默认只监听本机 `127.0.0.1`，运行需使用仓库中的 `botorch` Python 环境（包含 Flask、SciPy、RDKit、BoTorch）。所有网页任务输出保存在 `electrolyte_opt/bo_test/`，不会覆盖 `electrolyte_opt/pool/converted/` 中的示例文件。可用 `--output` 改变输出根目录。
+浏览器打开 <http://127.0.0.1:8765>。服务默认只监听本机 `127.0.0.1`。所有网页任务输出保存在仓库根目录的 `bo_test/`（已加入 `.gitignore`），不会覆盖 `pool/converted/` 中的示例文件。可用 `--output` 改变输出根目录。
 
-网页文件逐模块说明见 [docs/README.md](docs/README.md)；四步算法动作见 [bayesian_optimization/README.md](../bayesian_optimization/README.md)；服务器迁移与文件/SQLite 选择见 [docs/DEPLOYMENT_AND_STORAGE.md](docs/DEPLOYMENT_AND_STORAGE.md)。旧入口 `electrolyte_opt/web/server.py` 仍可直接运行，调用的也是同一套四步动作。
+网页文件逐模块说明见 [docs/README.md](docs/README.md)；四步算法动作见 [bayesian_optimization/README.md](../bayesian_optimization/README.md)；服务器迁移与文件/SQLite 选择见 [docs/DEPLOYMENT_AND_STORAGE.md](docs/DEPLOYMENT_AND_STORAGE.md)。旧入口 `web/server.py` 仍可直接运行，调用的也是同一套四步动作。
 
 ## 流程
 
@@ -23,7 +23,7 @@
 可视化脚本可独立运行：
 
 ```bash
-./botorch/bin/python electrolyte_opt/visualize_bo.py --run-dir electrolyte_opt/bo_test/runs/<run_id>
+python visualize_bo.py --run-dir bo_test/runs/<run_id>
 ```
 
 它输出 `visualization_<round>.json`。拟合散点是训练集后验均值诊断，不代表留出集预测精度；超体积只由已测值计算，参考点沿用 `training_summary.json` 中供 qLogNEHVI 使用的固定值。设计参考：[Bgolearn 文档](https://bgolearn.github.io/docs/) 与 [BoTorch 多目标优化教程](https://botorch.org/docs/v0.17.2/tutorials/multi_objective_bo)。
@@ -33,7 +33,7 @@
 ## 验证
 
 ```bash
-./botorch/bin/python electrolyte_opt/web/test_integration.py
+python web/test_integration.py
 ```
 
 测试使用临时目录，覆盖新撒点、候选转换、实验上传、单目标与双目标推荐、真实/模拟回传、第二轮及可视化数据。

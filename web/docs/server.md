@@ -4,7 +4,7 @@
 
 Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七元示例、查询状态/候选池/文件/实验模板；观测路由校验并保存初始 `experiment.csv`；优化路由创建运行、查询状态、下载推荐/预测/可视化；回传路由保存真实或模拟结果并启动下一轮。具体动作委托给 `bayesian_optimization/step_01...step_04`。
 
-`OUTPUT` 默认为 `electrolyte_opt/bo_test`。`designs/<design_id>` 保存输入和候选池；`runs/<run_id>` 保存算法结果和轮次文件。`status.json` 是当前任务状态，`feedback_sources` 记录真实/模拟来源。网页通过轮询查询异步任务。ID 和可下载文件名都使用白名单校验。
+`OUTPUT` 默认为仓库根目录的 `bo_test/`。`designs/<design_id>` 保存输入和候选池；`runs/<run_id>` 保存算法结果和轮次文件。`status.json` 是当前任务状态，`feedback_sources` 记录真实/模拟来源。网页通过轮询查询异步任务。ID 和可下载文件名都使用白名单校验。
 
 ## 主要 API
 

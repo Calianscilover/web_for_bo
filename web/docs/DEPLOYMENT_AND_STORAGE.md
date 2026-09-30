@@ -2,7 +2,7 @@
 
 ## 1. 当前运行边界
 
-当前入口是 `bayesian_optimization/run.py` 或 `web/server.py`，运行在本机 Flask 开发服务器。`web/server.py` 管理 HTTP、`status.json` 和进程内线程池；四步算法动作在 `bayesian_optimization/`；实际建模仍调用本地 Python 解释器下的 `qLogNEI.py`、`qLogNEHVI.py`。默认输出在 `electrolyte_opt/bo_test/`。
+当前入口是 `bayesian_optimization/run.py` 或 `web/server.py`，运行在本机 Flask 开发服务器。`web/server.py` 管理 HTTP、`status.json` 和进程内线程池；四步算法动作在 `bayesian_optimization/`；实际建模仍调用本地 Python 解释器下的 `qLogNEI.py`、`qLogNEHVI.py`。默认输出在仓库根目录的 `bo_test/`。
 
 ```text
 浏览器 → Flask API → 线程池 → 四步动作 → 同一台机器上的 Python 算法
@@ -75,7 +75,7 @@ artifacts(id, design_id, run_id, round_number, kind, relative_path,
 
 ## 5. 迁移实施顺序
 
-1. **服务器复现环境。** 固定 Python 版本、PyTorch/BoTorch/RDKit/Flask 依赖、CPU/GPU 选择；先把七元示例和当前端到端测试跑通。部署包包含 `electrolyte_opt/` 下原脚本和四步模块。
+1. **服务器复现环境。** 按仓库根目录的 `environment.yml` 固定 Python 版本、PyTorch/BoTorch/RDKit/Flask 依赖，确定 CPU/GPU 选择；先把七元示例和当前端到端测试跑通。部署包即本仓库全部内容。
 2. **外置数据目录。** 启动时传 `--output`，目录赋予运行用户读写权限；将现有 `bo_test/designs`、`bo_test/runs` 原样复制到持久盘并核对文件与 ID。避免将数据写进临时容器层或 Git 仓库。
 3. **拆分 Web 与 worker。** API 只创建任务和返回 ID；后台 worker 执行步骤 1、2、4，步骤 3 的回传合并也在同一 run 的串行锁内完成。队列要能持久化与重试；记录任务提交时间、开始/结束时间和失败原因。`ThreadPoolExecutor` 只作本地开发用。
 4. **用生产 WSGI 服务和反向代理。** Flask 官方明确开发服务器不用于生产；使用 Gunicorn/uWSGI/Waitress 等 WSGI 服务，前面配置 HTTPS、上传大小限制、超时和静态资源缓存。参考 [Flask 官方部署文档](https://flask.palletsprojects.com/en/stable/deploying/)。当前 `app` 可被 WSGI 导入，但在引入多 worker 前须先解决进程内队列与锁。

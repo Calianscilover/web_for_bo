@@ -1,0 +1,122 @@
+{
+  "design_name": "seven_component_amide_electrolyte",
+  "seed": 20260921,
+  "candidate_power": 14,
+  "selection_count": 16,
+  "temperature_C": 25,
+  "batch_mass_g": 5.0,
+  "mass_step_g": 0.0001,
+  "ndfa_per_lidfob_molar_ratio_bounds": [
+    1.0,
+    5.0
+  ],
+  "lidfob_molarity_bounds_mol_L": [
+    1.0,
+    2.5
+  ],
+  "solvent_pool_mass_fraction_bounds": {
+    "TTE": [
+      0.0,
+      0.5
+    ],
+    "FEC": [
+      0.0,
+      0.35
+    ],
+    "VC": [
+      0.0,
+      0.05
+    ],
+    "TMSP": [
+      0.0,
+      0.05
+    ]
+  },
+  "lino3_final_mass_fraction_bounds": [
+    0.0,
+    0.02
+  ],
+  "experiment_plan": {
+    "blocks": 2,
+    "independent_repeat_formulation_ids": []
+  },
+  "components": [
+    {
+      "name": "LiDFOB",
+      "role": "primary_salt",
+      "cas": "409071-16-5",
+      "smiles": "F[B-]1(OC(C(O1)=O)=O)F.[Li+]",
+      "formula": "C2BF2LiO4",
+      "density_g_mL": 2.12,
+      "density_source_url": "https://www.scbt.com/p/lithium-difluoro-oxalato-borate-409071-16-5",
+      "handling_note": "Primary salt; keep dry and verify dissolution.",
+      "minimum_nonzero_mass_g": 0.005
+    },
+    {
+      "name": "NDFA",
+      "role": "balance_solvent",
+      "cas": "1547-87-1",
+      "smiles": "CN(C)C(=O)C(F)(F)F",
+      "formula": "C4H6F3NO",
+      "density_g_mL": 1.26,
+      "density_source_url": "https://www.tcichemicals.com/MX/en/p/T3262",
+      "handling_note": "Balance solvent; use dry material.",
+      "minimum_nonzero_mass_g": 0.02
+    },
+    {
+      "name": "TTE",
+      "role": "cosolvent",
+      "cas": "16627-68-2",
+      "smiles": "FC(F)(OCC(F)(F)C(F)F)C(F)F",
+      "formula": "C5H4F8O",
+      "density_g_mL": 1.54,
+      "density_source_url": "https://www.tcichemicals.com/CA/fr/p/T3069",
+      "handling_note": "Fluorinated cosolvent; use dry material.",
+      "minimum_nonzero_mass_g": 0.02
+    },
+    {
+      "name": "FEC",
+      "role": "cosolvent",
+      "cas": "114435-02-8",
+      "smiles": "FC1COC(=O)O1",
+      "formula": "C3H3FO3",
+      "density_g_mL": 1.485,
+      "density_source_url": "https://www.sigmaaldrich.com/US/en/product/aldrich/935905",
+      "handling_note": "Melting range is near room temperature; equilibrate to 25 C and ensure homogeneous liquid before weighing.",
+      "minimum_nonzero_mass_g": 0.02
+    },
+    {
+      "name": "LiNO3",
+      "role": "salt_additive",
+      "cas": "7790-69-4",
+      "smiles": "[Li+].[O-][N+](=O)[O-]",
+      "formula": "LiNO3",
+      "density_g_mL": 2.38,
+      "density_source_url": "https://pubchem.ncbi.nlm.nih.gov/compound/10129889",
+      "handling_note": "Anhydrous LiNO3 assumed; hygroscopic oxidizer; verify complete dissolution.",
+      "minimum_nonzero_mass_g": 0.005
+    },
+    {
+      "name": "VC",
+      "role": "functional_additive",
+      "cas": "872-36-6",
+      "smiles": "O=C1OC=CO1",
+      "formula": "C3H2O3",
+      "density_g_mL": 1.355,
+      "density_source_url": "https://www.sigmaaldrich.com/US/en/product/aldrich/809977",
+      "handling_note": "Melting range is near room temperature; equilibrate to 25 C before weighing.",
+      "minimum_nonzero_mass_g": 0.005
+    },
+    {
+      "name": "TMSP",
+      "role": "functional_additive",
+      "cas": "1795-31-9",
+      "smiles": "C[Si](C)(C)OP(O[Si](C)(C)C)O[Si](C)(C)C",
+      "formula": "C9H27O3PSi3",
+      "density_g_mL": 0.89,
+      "density_source_url": "https://www.tcichemicals.com/IE/en/p/P1217",
+      "handling_note": "Air- and moisture-sensitive; handle under inert atmosphere.",
+      "minimum_nonzero_mass_g": 0.005
+    }
+  ]
+}

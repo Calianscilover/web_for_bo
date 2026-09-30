@@ -1,0 +1,22 @@
+# Conda environment for the electrolyte BO web workbench.
+# Versions match the local botorch environment that passes all tests.
+#   conda env create -f environment.yml
+#   conda activate botorch
+name: botorch
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - numpy=1.26.4
+  - scipy=1.13.1
+  - scikit-learn=1.4.2
+  - matplotlib=3.8.4
+  - rdkit=2024.03.5
+  - flask=3.0.3
+  - werkzeug=3.0.3
+  - pip:
+      - torch==2.4.0
+      - linear-operator==0.6.1
+      - gpytorch==1.15.2
+      - botorch==0.18.1

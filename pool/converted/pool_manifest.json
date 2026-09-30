@@ -1,0 +1,154 @@
+{
+  "schema_version": 2,
+  "script_version": "1.1.0",
+  "generated_at_utc": "2026-09-28T03:59:37.481837+00:00",
+  "rdkit_version": "2024.03.5",
+  "inputs": {
+    "pool": {
+      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/electrolyte_opt/pool/pool.csv",
+      "sha256": "c5422a51230a66d36c58b864e1e404deab595d7dff6ec6f959aa6c66c0f8efad"
+    },
+    "config": {
+      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/electrolyte_opt/pool/config_snapshot.json",
+      "sha256": "77d8c1743cc8f248e267a85fa802e87403a8a257d89e9a4e37c30544f73eed10"
+    }
+  },
+  "settings": {
+    "feature_basis": "mole",
+    "presence_tolerance": 1e-12,
+    "sum_tolerance": 1e-08,
+    "id_decimals": 10
+  },
+  "components": [
+    {
+      "slot": 0,
+      "name": "LiDFOB",
+      "role": "primary_salt",
+      "category": "lithium_salts",
+      "smiles": "F[B-]1(OC(C(O1)=O)=O)F.[Li+]",
+      "canonical_smiles": "O=C1O[B-](F)(F)OC1=O.[Li+]",
+      "inchi_key": "MEDDCIKGDMDORY-UHFFFAOYSA-N",
+      "chemical_key": "MEDDCIKGDMDORY-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 1,
+      "name": "NDFA",
+      "role": "balance_solvent",
+      "category": "solvents",
+      "smiles": "CN(C)C(=O)C(F)(F)F",
+      "canonical_smiles": "CN(C)C(=O)C(F)(F)F",
+      "inchi_key": "WXBWKMLIVXELSF-UHFFFAOYSA-N",
+      "chemical_key": "WXBWKMLIVXELSF-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 2,
+      "name": "TTE",
+      "role": "cosolvent",
+      "category": "solvents",
+      "smiles": "FC(F)(OCC(F)(F)C(F)F)C(F)F",
+      "canonical_smiles": "FC(F)C(F)(F)COC(F)(F)C(F)F",
+      "inchi_key": "HCBRSIIGBBDDCD-UHFFFAOYSA-N",
+      "chemical_key": "HCBRSIIGBBDDCD-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 3,
+      "name": "FEC",
+      "role": "cosolvent",
+      "category": "solvents",
+      "smiles": "FC1COC(=O)O1",
+      "canonical_smiles": "O=C1OCC(F)O1",
+      "inchi_key": "SBLRHMKNNHXPHG-UHFFFAOYSA-N",
+      "chemical_key": "SBLRHMKNNHXPHG-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 4,
+      "name": "LiNO3",
+      "role": "salt_additive",
+      "category": "lithium_salts",
+      "smiles": "[Li+].[O-][N+](=O)[O-]",
+      "canonical_smiles": "O=[N+]([O-])[O-].[Li+]",
+      "inchi_key": "IIPYXGDZVMZOAP-UHFFFAOYSA-N",
+      "chemical_key": "IIPYXGDZVMZOAP-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 5,
+      "name": "VC",
+      "role": "functional_additive",
+      "category": "functional_additives",
+      "smiles": "O=C1OC=CO1",
+      "canonical_smiles": "O=c1occo1",
+      "inchi_key": "VAYTZRYEBVHVLE-UHFFFAOYSA-N",
+      "chemical_key": "VAYTZRYEBVHVLE-UHFFFAOYSA-N"
+    },
+    {
+      "slot": 6,
+      "name": "TMSP",
+      "role": "functional_additive",
+      "category": "functional_additives",
+      "smiles": "C[Si](C)(C)OP(O[Si](C)(C)C)O[Si](C)(C)C",
+      "canonical_smiles": "C[Si](C)(C)OP(O[Si](C)(C)C)O[Si](C)(C)C",
+      "inchi_key": "VMZOBROUFBEGAR-UHFFFAOYSA-N",
+      "chemical_key": "VMZOBROUFBEGAR-UHFFFAOYSA-N"
+    }
+  ],
+  "counts": {
+    "samples": 9656,
+    "unique_samples": 9656,
+    "chemical_groups": 32
+  },
+  "outputs": {
+    "pool_features.csv": {
+      "columns": [
+        "mole_ratio_0",
+        "mole_ratio_1",
+        "mole_ratio_2",
+        "mole_ratio_3",
+        "mole_ratio_4",
+        "mole_ratio_5",
+        "mole_ratio_6"
+      ],
+      "sha256": "785eaf4cd913ece847dd7b61eafd0c8ce246bcd873f0b90b1d2480e4caef7774"
+    },
+    "pool_catalog.csv": {
+      "columns": [
+        "sample_id",
+        "chem_group_id",
+        "solvents",
+        "lithium_salts",
+        "functional_additives",
+        "source_row",
+        "presence_pattern",
+        "compound_0",
+        "smiles_0",
+        "mass_ratio_0",
+        "mole_ratio_0",
+        "compound_1",
+        "smiles_1",
+        "mass_ratio_1",
+        "mole_ratio_1",
+        "compound_2",
+        "smiles_2",
+        "mass_ratio_2",
+        "mole_ratio_2",
+        "compound_3",
+        "smiles_3",
+        "mass_ratio_3",
+        "mole_ratio_3",
+        "compound_4",
+        "smiles_4",
+        "mass_ratio_4",
+        "mole_ratio_4",
+        "compound_5",
+        "smiles_5",
+        "mass_ratio_5",
+        "mole_ratio_5",
+        "compound_6",
+        "smiles_6",
+        "mass_ratio_6",
+        "mole_ratio_6"
+      ],
+      "sha256": "444a600603733e71db73526ed71a7106d4f822b38b08a37f4b0d408f86e4a944"
+    }
+  },
+  "design_name": "seven_component_amide_electrolyte"
+}
