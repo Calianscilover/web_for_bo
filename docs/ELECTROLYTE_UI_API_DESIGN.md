@@ -128,7 +128,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | `POST /api/v1/designs/{id}/observations` | 按模板填写的完整实验 CSV 与所选目标列 | 导入行数、已匹配行数、错误清单、规范化文件 ID |
 | `GET /api/v1/designs/{id}/recipe-template?target=...` | 所选目标内部列名 | 下载“experiment_id + 各组分质量(g) + 目标列”的配方模板 |
 | `POST /api/v1/designs/{id}/experiment-recipes` | 按组分填写的自有配方 CSV 与所选目标列 | 实验行数、配方数、已在池/新增/越界/重复合并数、候选池新规模 |
-| `POST /api/v1/designs/{id}/optimization-runs` | `mode=single/multi`、目标及方向、批量数、模型参数 | `run_id`、异步任务状态 |
+| `POST /api/v1/designs/{id}/optimization-runs` | `mode=single/multi`、目标及方向、批量数、模型超参数（`mc_samples`、`fit_maxiter`、`seed`、`pool_batch_size`、`feature_basis`、`kernel`、`matern_nu`、`ard`、`lengthscale_init`、`noise_std[]`、双目标 `ref_point[]`） | `run_id`、异步任务状态 |
 | `GET /api/v1/optimization-runs/{run_id}` | 无 | 当前轮次、训练/预测/推荐状态、产物链接 |
 | `GET /api/v1/optimization-runs/{run_id}/recommendations/{round}` | 轮次 | 配方表预览、目标列、CSV 下载链接 |
 

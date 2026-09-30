@@ -5,6 +5,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import re
 import sys
 import traceback
@@ -102,6 +103,66 @@ def target_names(raw, mode=None):
     if not 1 <= len(names) <= 2:
         raise ValueError("请填写 1 到 2 个目标列名")
     return names
+
+
+def optional_numbers(value, names, label, positive):
+    """Blank list means "let the algorithm decide"; otherwise one finite number per target."""
+    values = [str(item).strip() if item is not None else "" for item in (value or [])]
+    if not any(values):
+        return None
+    if len(values) != len(names) or not all(values):
+        raise ValueError(f"{label}需为每个目标（{'、'.join(names)}）都填写，或全部留空")
+    try:
+        numbers = [float(item) for item in values]
+    except ValueError as error:
+        raise ValueError(f"{label}必须是数字") from error
+    if not all(math.isfinite(item) and (item > 0 or not positive) for item in numbers):
+        raise ValueError(f"{label}必须是{'正' if positive else '有限'}数")
+    return numbers
+
+
+def model_settings(payload, mode, names):
+    settings = {}
+    for key, label, lower, upper, default in (
+            ("batch_size", "每轮推荐数", 1, 20, 3), ("mc_samples", "MC 采样数", 16, 2048, 128),
+            ("fit_maxiter", "拟合最大迭代", 10, 1000, 100), ("seed", "随机种子", 0, 2**31 - 1, 2026),
+            ("pool_batch_size", "候选评分批大小", 16, 4096, 128)):
+        try:
+            value = int(payload.get(key, default))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{label}必须是整数") from error
+        if not lower <= value <= upper:
+            raise ValueError(f"{label}需在 {lower}–{upper} 之间")
+        settings[key] = value
+    kernel = payload.get("kernel", "default")
+    if kernel not in ("default", "rbf", "matern"):
+        raise ValueError("核函数只能是默认、RBF 或 Matérn")
+    try:
+        matern_nu = float(payload.get("matern_nu", 2.5))
+    except (TypeError, ValueError):
+        matern_nu = None
+    if matern_nu not in (0.5, 1.5, 2.5):
+        raise ValueError("Matérn ν 只能是 0.5、1.5 或 2.5")
+    ard = payload.get("ard", True)
+    if not isinstance(ard, bool):
+        raise ValueError("ARD 必须是开或关")
+    if kernel == "default" and not ard:
+        raise ValueError("关闭 ARD 需要选择 RBF 或 Matérn 核")
+    try:
+        lengthscale = float(payload.get("lengthscale_init", 0.5))
+    except (TypeError, ValueError) as error:
+        raise ValueError("初始长度尺度必须是数字") from error
+    if not (math.isfinite(lengthscale) and 1e-3 <= lengthscale <= 100):
+        raise ValueError("初始长度尺度需在 0.001–100 之间（输入已归一化到 0–1）")
+    feature_basis = payload.get("feature_basis", "mass")
+    if feature_basis not in ("mass", "mole"):
+        raise ValueError("输入特征只能是质量分数或摩尔分数")
+    settings.update(kernel=kernel, matern_nu=matern_nu, ard=ard, lengthscale_init=lengthscale,
+                    feature_basis=feature_basis,
+                    noise_std=optional_numbers(payload.get("noise_std"), names, "观测噪声标准差", True),
+                    ref_point=(optional_numbers(payload.get("ref_point"), names, "超体积参考点", False)
+                               if mode == "multi" else None))
+    return settings
 
 
 def job(directory, action):
@@ -313,14 +374,8 @@ def create_run(design_id):
         raise ValueError("至少需要 2 条目标值完整的实验才能开始优化")
     directions = payload.get("directions", ["max"] * len(names))
     if len(directions) != len(names) or any(x not in ("max", "min") for x in directions):
-        raise ValueError("Directions must be max or min for each target")
-    settings = {}
-    for key, lower, upper, default in (("batch_size", 1, 20, 3), ("mc_samples", 16, 2048, 128),
-                                        ("fit_maxiter", 10, 1000, 100), ("seed", 0, 2**31 - 1, 2026)):
-        value = int(payload.get(key, default))
-        if not lower <= value <= upper:
-            raise ValueError(f"{key} must be between {lower} and {upper}")
-        settings[key] = value
+        raise ValueError("每个目标的优化方向必须是最大化或最小化")
+    settings = model_settings(payload, mode, names)
     run_dir = OUTPUT / "runs" / uid()
     run_dir.mkdir(parents=True)
     state = {"status": "queued", "design_id": design_id, "mode": mode,

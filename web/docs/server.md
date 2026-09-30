@@ -20,6 +20,8 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 推荐/可视化/文件 | `GET /api/v1/optimization-runs/{id}/recommendations/{round}`、`visualization`、`files/{name}` |
 | 实测/模拟回传与下一轮 | `POST /api/v1/optimization-runs/{id}/feedback`、`simulate`、`next-round` |
 
+创建运行时 `model_settings` 校验全部模型超参数（整数范围、核函数与 Matérn ν 取值、默认核不可关闭 ARD、长度尺度 0.001–100、噪声为正且需每个目标都填或都留空、双目标参考点为有限数），并保存到运行的 `status.json`，后续轮次沿用同一组设置。
+
 校验错误统一返回 400 和 `{code, message}`；异常带 `details` 属性时（如实验 CSV 的 `RecipeError`）一并返回 `details` 列表，页面逐条显示。实验导入、目标列名和启动优化前的检查使用中文提示。
 
 ## 修改位置

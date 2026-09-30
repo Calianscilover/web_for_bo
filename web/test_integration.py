@@ -77,11 +77,19 @@ class LocalFlow(unittest.TestCase):
         run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
                                json={"mode": "single", "targets": ["Conductivity"],
                                      "directions": ["max"], "batch_size": 2,
-                                     "mc_samples": 16, "fit_maxiter": 10})
+                                     "mc_samples": 16, "fit_maxiter": 10,
+                                     "kernel": "matern", "matern_nu": 1.5, "ard": False,
+                                     "lengthscale_init": "0.3", "noise_std": ["0.05"],
+                                     "feature_basis": "mole", "pool_batch_size": 64})
         self.assertEqual(run.status_code, 202, run.get_json())
         run_id = run.get_json()["run_id"]
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
         self.assertEqual(info["round"], 1)
+        summary = info["summary"]
+        self.assertEqual((summary["kernel"], summary["matern_nu"], summary["ard"],
+                          summary["lengthscale_init"], summary["noise_std"],
+                          summary["pool_batch_size"]), ("matern", 1.5, False, 0.3, 0.05, 64))
+        self.assertTrue(all(name.startswith("mole_ratio_") for name in summary["feature_names"]))
         first_visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
         self.assertEqual(first_visual["mode"], "single")
         self.assertEqual(len(first_visual["fit"]["Conductivity"]["points"]), 4)
@@ -264,10 +272,22 @@ class LocalFlow(unittest.TestCase):
                                   json={"targets": ["Conductivity", "LCE"],
                                         "csv": stream.getvalue()})
         self.assertEqual(upload.status_code, 200, upload.get_json())
+        base = {"mode": "multi", "targets": ["Conductivity", "LCE"],
+                "directions": ["max", "max"], "batch_size": 2, "mc_samples": 16, "fit_maxiter": 10}
+        for invalid, message in (({"ard": False}, "关闭 ARD"),
+                                 ({"noise_std": ["0.1", ""]}, "观测噪声标准差需为每个目标"),
+                                 ({"noise_std": ["0.1", "-1"]}, "观测噪声标准差必须是正数"),
+                                 ({"lengthscale_init": 0}, "初始长度尺度"),
+                                 ({"kernel": "linear"}, "核函数"),
+                                 ({"ref_point": ["abc", "1"]}, "超体积参考点必须是数字"),
+                                 ({"pool_batch_size": 8}, "候选评分批大小")):
+            rejected = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                                        json={**base, **invalid})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertIn(message, rejected.get_json()["message"])
         run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
-                               json={"mode": "multi", "targets": ["Conductivity", "LCE"],
-                                     "directions": ["max", "max"], "batch_size": 2,
-                                     "mc_samples": 16, "fit_maxiter": 10})
+                               json={**base, "kernel": "rbf", "noise_std": ["0.1", "0.5"],
+                                     "ref_point": ["2", "-1.5"]})
         self.assertEqual(run.status_code, 202, run.get_json())
         run_id = run.get_json()["run_id"]
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
@@ -276,6 +296,8 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual(first_visual["mode"], "multi")
         self.assertGreaterEqual(first_visual["progress"][0]["value"], 0)
         self.assertEqual(first_visual["reference_point"], info["summary"]["ref_point"])
+        self.assertEqual(info["summary"]["ref_point"], [2.0, -1.5])
+        self.assertEqual((info["summary"]["kernel"], info["summary"]["noise_std"]), ("rbf", [0.1, 0.5]))
         rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
         self.assertEqual(len(rec["rows"]), 2)
         self.assertTrue(all(row["Conductivity"] == row["LCE"] == "" for row in rec["rows"]))
