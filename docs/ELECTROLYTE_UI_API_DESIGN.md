@@ -2,7 +2,7 @@
 
 ## 1. 目标与范围
 
-建设一个简洁的网页工作台：用户输入锂盐、溶剂及其质量分数范围和实验温度，生成可追溯的候选配方空间；按规定的候选池格式上传已有实验结果；选择单目标或双目标优化；查看并下载算法推荐配方。本方案定义页面、API、数据契约和新撒点脚本的接入方式。
+建设一个简洁的网页工作台：用户输入锂盐、溶剂及其质量分数范围和实验温度，生成可追溯的候选配方空间；按规定的候选池格式上传已有实验结果；选择单目标或多目标（2–4 个目标）优化；查看并下载算法推荐配方。本方案定义页面、API、数据契约和新撒点脚本的接入方式。
 
 **当前原型已实现：**网页与本地 API 位于 `web/`，撒点脚本位于 `pool/generate_pool.py`。由于本地 `botorch` 环境已经包含 Flask，首版使用 Flask 服务；React/TypeScript 与 FastAPI 仍可作为后续部署时的技术选项。原型运行数据写入 `bo_test/`，启动和验证方式见 `web/README.md`。
 
@@ -10,7 +10,7 @@
 
 ![DPTechnology 深势科技 Logo](assets/dptechnology-logo.jpg)
 
-首版采用**每个设计任务一个固定温度**。温度只写入设计配置与界面记录，暂不作为 BO 特征。撒点、候选池转换、实验数据读取、单／双目标训练与推荐继续沿用目前七元电解液已跑通的文件流转方式。
+首版采用**每个设计任务一个固定温度**。温度只写入设计配置与界面记录，暂不作为 BO 特征。撒点、候选池转换、实验数据读取、单／多目标训练与推荐继续沿用目前七元电解液已跑通的文件流转方式。
 
 ## 2. 用户流程与页面
 
@@ -29,7 +29,7 @@ flowchart LR
 | ① 配方空间 | 设计名称；锂盐名称与 SMILES；固定温度 °C；锂盐总质量分数范围；可增删的溶剂行（名称、SMILES、溶剂池质量分数下限/上限），其中一项标记为基准溶剂；采样数和随机种子置于“高级设置” | 实时校验、溶剂分数合计可行性、提交生成 |
 | ② 候选池 | 生成状态、候选数、约束筛选数；按 `sample_id` 分页的配方表；质量分数/摩尔分数切换；搜索和导出 | `pool_catalog.csv` 下载链接及设计配置下载链接 |
 | ③ 实验数据 | 从候选池下载规定格式模板、上传完整实验 CSV、校验报告 | 匹配/缺失/重复/无效行数，已测目标覆盖情况 |
-| ④ 优化设置 | 单目标/双目标切换；目标列和单位；最大化/最小化；每轮推荐数；高级 GP 参数 | 开始运行、任务状态、错误说明 |
+| ④ 优化设置 | 单目标/多目标切换，多目标选择 2–4 个目标；目标列和单位；最大化/最小化；每轮推荐数；高级 GP 参数 | 开始运行、任务状态、错误说明 |
 | ⑤ 推荐结果 | 本轮编号、原始配方字段、空白目标列、候选预测均值/不确定度的单独视图 | 表格预览及 `recommendation_N.csv` 下载 |
 
 交互原则：一次只突出一个主操作；候选表默认折叠长 SMILES；数值输入同时显示单位；后台生成和训练使用异步任务及进度状态，不让浏览器一直等待 HTTP 响应。
@@ -84,7 +84,7 @@ flowchart LR
 建议新增 `pool/generate_pool.py`，输入为设计 JSON 和输出目录，输出与当前七元 DoE 的表头兼容，不增加复杂的专属化学约束：
 
 1. 读取一个锂盐和多个溶剂，使用 RDKit 校验并规范化 SMILES，计算分子量；输出带组分顺序的 `components.csv` 和不可变的 `config_snapshot.json`。一个锂盐标为 `primary_salt`，一个指定的基准溶剂标为 `balance_solvent`，其余标为 `cosolvent`，以适配转换脚本。
-2. 使用固定种子的 Sobol 序列采样 `s` 和溶剂池分数。溶剂分数必须严格满足 `Σq_i=1`，并满足每个溶剂自身的上下限。可采用逐项剩余额度法：为当前溶剂计算不破坏剩余组分上下限的可行区间，再用 Sobol 数值在该区间采样；最后一个溶剂取剩余分数。不能先独立采样再简单归一化，因为那样可能越过原定上下限。
+2. 使用固定种子的 Sobol 序列采样 `s` 和溶剂池分数。溶剂分数必须严格满足 `Σq_i=1`，并满足每个溶剂自身的上下限。可采用逐项剩余额度法：为当前溶剂计算不破坏剩余组分上下限的可行区间，再用 Sobol 数值在该区间采样；最后一个溶剂取剩余分数。不能先独立采样再简单归一化，因为那样可能越过原定上下限。下限为 0 的共溶剂（基准溶剂除外）与添加剂视为可选组分：每个可选组分多用一个 Sobol 维度，以 `sampling.absence_probability`（默认 0.25）的概率不加入，从而在 N 元设计中也撒出 N−1 元等子配方；加入时质量不低于该组分的 `minimum_nonzero_mass_g`（默认一个称量步长）。若剩余溶剂上限之和不足 1，缺席的共溶剂会被补回；此时由最后一个在场溶剂取剩余分数。
 3. 计算各组分最终质量分数 `w_s=s`、`w_i=(1-s)q_i`；按 `batch_mass_g` 与 `mass_step_g` 离散成可称量质量，再以离散后的值重算质量分数与摩尔分数。复核溶剂池范围及总质量，删除不合格和质量向量重复的点。
 4. 输出 `feasible_candidates.csv` 和供转换脚本读取的 `pool.csv`。每行至少包括 `presence_pattern`，以及对每个组分的 `<name>_mass_g`、`<name>_mass_fraction`、`<name>_mole_fraction`。`pool.csv` 可与 `feasible_candidates.csv` 使用相同内容。温度只保存在 JSON 与 UI 任务元数据中。
 
@@ -103,7 +103,7 @@ sample_id,chem_group_id,solvents,lithium_salts,...,
 compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 ```
 
-后端按 `sample_id` 与本设计的候选池逐行匹配，检查唯一性、所有原始配方字段及比例值与 `pool_catalog.csv` 一致、目标值为有限数值或留空、不能有池外样本。校验通过后保存为该优化运行的 `experiment.csv`；校验失败则逐行报告，不启动 BO。双目标训练只使用两个目标都完整的行；未测或部分实测行留在候选池。上传后的原始文件与规范化结果都应保留以便追溯。
+后端按 `sample_id` 与本设计的候选池逐行匹配，检查唯一性、所有原始配方字段及比例值与 `pool_catalog.csv` 一致、目标值为有限数值或留空、不能有池外样本。校验通过后保存为该优化运行的 `experiment.csv`；校验失败则逐行报告，不启动 BO。多目标训练只使用所有目标都完整的行；未测或部分实测行留在候选池。上传后的原始文件与规范化结果都应保留以便追溯。
 
 现有 BO 代码要求每条已测配方也在候选池中，因此**历史实验若不在当前候选池，不能仅靠改 CSV 列名导入**。已实现版本把页面上传统一为按组分称量的配方格式（下文“自有配方”路径），候选池模板与自有配方模板列相同，上述目录格式契约仅保留在 `observations` API；“自有配方”路径（`pool/import_experiments.py`）：实验人员按组分填写实际称量质量，脚本把与候选池相同的配方对应到原行，把新配方作为固定候选追加到 `pool.csv` 并用原设置重新转换，再生成 `experiment.csv` 和 `experiment_mapping.csv`。`sample_id`、`chem_group_id` 是组成的确定性哈希，所以新旧候选编号一致，原有编号不变；不做最近邻替代或自动修改实测配方。重复配方的目标值取平均，越界配方保留并标记。
 
@@ -114,7 +114,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | Conductivity | mS/cm | `Conductivity` | 界面显示 `Conductivity (mS/cm)`，下载模板及上传 CSV 固定使用 `Conductivity` |
 | LCE | 由实验定义 | `LCE` | 与当前默认 `logCE` **不自动等同**；下载模板及上传 CSV 固定使用 `LCE` |
 
-单目标配置 `targets=["Conductivity"]`，运行 `qLogNEI.py --target Conductivity`；双目标配置 `targets=["Conductivity","LCE"]`，运行 `qLogNEHVI.py --targets Conductivity LCE`。目标列的顺序与优化方向、参考点顺序一致。若上传的是现有七元示例数据，其目标列为 `logCE` 和 `Conductivity`，界面应按真实列名选择 `logCE`，不可把它静默解释为 `LCE`。内部脚本参数以数组方式传递给子进程，不拼接 shell 命令。
+单目标配置 `targets=["Conductivity"]`，运行 `qLogNEI.py --target Conductivity`；多目标配置 2–4 个目标，例如 `targets=["Conductivity","LCE"]`，运行 `qLogNEHVI.py --targets Conductivity LCE`；三个目标时为 `--targets Conductivity LCE Viscosity`。目标列的顺序与优化方向、参考点顺序一致。若上传的是现有七元示例数据，其目标列为 `logCE` 和 `Conductivity`，界面应按真实列名选择 `logCE`，不可把它静默解释为 `LCE`。内部脚本参数以数组方式传递给子进程，不拼接 shell 命令。
 
 ## 6. API 草案
 
@@ -128,7 +128,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | `POST /api/v1/designs/{id}/observations` | 按模板填写的完整实验 CSV 与所选目标列 | 导入行数、已匹配行数、错误清单、规范化文件 ID |
 | `GET /api/v1/designs/{id}/recipe-template?target=...` | 所选目标内部列名 | 下载“experiment_id + 各组分质量(g) + 目标列”的配方模板 |
 | `POST /api/v1/designs/{id}/experiment-recipes` | 按组分填写的自有配方 CSV 与所选目标列 | 实验行数、配方数、已在池/新增/越界/重复合并数、候选池新规模 |
-| `POST /api/v1/designs/{id}/optimization-runs` | `mode=single/multi`、目标及方向、批量数、模型超参数（`mc_samples`、`fit_maxiter`、`seed`、`pool_batch_size`、`feature_basis`、`kernel`、`matern_nu`、`ard`、`lengthscale_init`、`noise_std[]`、双目标 `ref_point[]`） | `run_id`、异步任务状态 |
+| `POST /api/v1/designs/{id}/optimization-runs` | `mode=single/multi`、目标及方向、批量数、模型超参数（`mc_samples`、`fit_maxiter`、`seed`、`pool_batch_size`、`feature_basis`、`kernel`、`matern_nu`、`ard`、`lengthscale_init`、`noise_std[]`、多目标 `ref_point[]`；数组长度与目标数一致） | `run_id`、异步任务状态 |
 | `GET /api/v1/optimization-runs/{run_id}` | 无 | 当前轮次、训练/预测/推荐状态、产物链接 |
 | `GET /api/v1/optimization-runs/{run_id}/recommendations/{round}` | 轮次 | 配方表预览、目标列、CSV 下载链接 |
 
@@ -137,7 +137,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 ## 7. 运行规则与界面回传
 
 1. 新撒点脚本生成符合七元流程文件契约的候选数据，`convert_pool.py` 转换后，后端分页返回 `pool_catalog.csv` 并提供完整 CSV 下载。
-2. 用户从候选池下载实验模板，填写已测配方的目标值并上传。后端执行完整列与逐行配方校验；通过后建立独立优化输出目录，调用对应单/双目标脚本，并显式传入 `--experiment`、`--pool`、`--output`、目标列和优化方向。
+2. 用户从候选池下载实验模板，填写已测配方的目标值并上传。后端执行完整列与逐行配方校验；通过后建立独立优化输出目录，调用对应单/多目标脚本，并显式传入 `--experiment`、`--pool`、`--output`、目标列和优化方向。
 3. 算法产生 `candidate_predictions.csv`（后续带轮次后缀）与 `recommendation_1.csv`（后续 `recommendation_2.csv` 等）。预测值只展示在预测视图；推荐 CSV 保留原始配方信息和空白性能列，供真实实验回填。
 4. 界面显示推荐结果并提供下载。后续真实回传通过推荐 CSV 或上传接口进入 `observation.csv`，再触发下一轮。演示模式可单独调用 `simu_experiment.py` 生成随机目标值，但必须标记为**模拟数据**，与真实实验运行隔离。
 
@@ -146,7 +146,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 - 能创建“一个锂盐 + 多个溶剂”的 5 元或 7 元设计，撒点后的每行溶剂池分数之和为 1，各分数落在输入范围内，并输出与 `convert_pool.py` 兼容的候选文件；重复运行相同输入与种子时，候选内容和 `sample_id` 稳定。
 - 页面左上角显示提供的 DPTechnology／深势科技 Logo；能显示候选数量、预览/下载 `pool_catalog.csv`。
 - 实验结果必须按下载模板的完整配方列上传；CSV 校验能报告池外 ID、重复样本、配方字段不一致、空值和非法性能值。
-- 单目标、双目标分别调用正确脚本；至少两条完整实测数据时，能生成本轮预测和 `recommendation_1.csv`，推荐行来自候选池且性能列为空。
+- 单目标、多目标分别调用正确脚本；至少两条完整实测数据时，能生成本轮预测和 `recommendation_1.csv`，推荐行来自候选池且性能列为空。
 - 不同设计及不同优化运行的文件互不覆盖；任务失败可在界面查看明确原因。
 - 多锂盐、目标单位换算、真实实验回填后的多轮 UI 控制均作为后续扩展；首版先完成“创建空间 → 转换候选池 → 按模板上传初始实验 → 产生推荐”。
 
@@ -154,5 +154,5 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 
 - DoE 七元专用脚本：`/Users/zilinchen/Documents/ChatGPT/No_anode/AFLMB-AL/seven_component_amide_design.py`；现有配置与产物：`/Users/zilinchen/Documents/ChatGPT/No_anode/AFLMB-AL/data/DoE/seven_component/`；新撒点脚本拟建于 `pool/generate_pool.py`。
 - 候选池转换：`pool/convert_pool.py`。
-- 单/双目标 BO 与实验数据回流：`qLogNEI.py`、`qLogNEHVI.py`、`bo_utils.py`。
+- 单/多目标 BO 与实验数据回流：`qLogNEI.py`、`qLogNEHVI.py`、`bo_utils.py`。
 - 模拟回传：`simu_experiment.py`。

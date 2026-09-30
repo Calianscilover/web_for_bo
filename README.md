@@ -1,6 +1,6 @@
 # web_for_bo：电解液配方贝叶斯优化工作台
 
-本地网页工作台：定义“一个锂盐 + 多个溶剂”的配方空间并撒点生成候选池，按模板上传实验结果，用 BoTorch 的 qLogNEI（单目标）或 qLogNEHVI（双目标）推荐下一批配方，回填实测值后继续多轮优化。
+本地网页工作台：定义“一个锂盐 + 多个溶剂”的配方空间并撒点生成候选池，按模板上传实验结果，用 BoTorch 的 qLogNEI（单目标）或 qLogNEHVI（多目标，2–4 个）推荐下一批配方，回填实测值后继续多轮优化。
 
 ## 环境
 
@@ -28,7 +28,7 @@ python bayesian_optimization/run.py --port 8765
 ```bash
 python web/test_integration.py                     # 网页 API 端到端流程
 python -m unittest discover -s tests               # BO 算法脚本
-(cd pool && python -m unittest test_convert_pool)  # 候选池转换
+(cd pool && python -m unittest test_convert_pool test_generate_pool)  # 候选池转换与撒点
 ```
 
 ## 目录
@@ -39,7 +39,7 @@ web_for_bo/
 ├── bayesian_optimization/  网页调用的四步动作：撒点 → 候选池转换 → 实验上传/回传 → 训练推荐/可视化
 ├── algorithms/             BO 算法脚本（四步动作以子进程调用，也可命令行单独运行）
 │   ├── qLogNEI.py          单目标推荐入口
-│   ├── qLogNEHVI.py        双目标推荐入口
+│   ├── qLogNEHVI.py        多目标（2–4 个）推荐入口
 │   ├── bo_utils.py         GP 拟合、采集函数、数据读取与回流等共用工具
 │   ├── simu_experiment.py  模拟实验回传（仅演示）
 │   └── visualize_bo.py     生成 visualization_<round>.json
