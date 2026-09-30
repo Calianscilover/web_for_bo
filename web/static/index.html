@@ -71,7 +71,7 @@
             <div class="actions"><button id="template" class="secondary">下载实验模板 ↓</button><label class="upload-button">选择实验 CSV <input id="experiment-file" type="file" accept=".csv,text/csv"></label></div>
           </div>
           <div id="upload-recipe" class="upload-panel" hidden>
-            <div class="callout"><strong>按组分称量填写</strong><span>每行一个实验，填写各组分实际质量（g，未使用留空）和目标值。与候选池相同的配方沿用原 sample_id；新配方加入候选池，并按同一规则生成 sample_id 与 chem_group_id。重复配方的目标值取平均。</span></div>
+            <div class="callout"><strong>按组分称量填写</strong><span>模板前两行 EXAMPLE 是填写示例（上传时自动忽略）：每行一个实验，填写各组分实际称量质量（g，总质量不限，未使用的组分留空）和目标值。无需转换脚本：与候选池相同的配方沿用原 sample_id，新配方自动加入候选池并按同一规则生成 sample_id 与 chem_group_id；重复配方的目标值取平均。</span></div>
             <div class="actions"><button id="recipe-template" class="secondary">下载配方模板 ↓</button><label class="upload-button">选择配方 CSV <input id="recipe-file" type="file" accept=".csv,text/csv"></label><a id="mapping-link" class="download disabled" href="#">对齐结果 ↗</a></div>
           </div>
           <div id="experiment-result" class="result-line">尚未上传。七元示例已附带实测数据，可直接启动优化。</div>
