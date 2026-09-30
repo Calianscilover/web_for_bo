@@ -262,8 +262,8 @@ def upload_observations(design_id):
 @app.get("/api/v1/designs/<design_id>/recipe-template")
 def recipe_template_csv(design_id):
     names = target_names(request.args.getlist("target"))
-    fields = recipe_template(path_for("designs", design_id), names)
-    return csv_response(fields, [], "recipe_template.csv")
+    fields, rows = recipe_template(path_for("designs", design_id), names)
+    return csv_response(fields, rows, "recipe_template.csv")
 
 
 @app.post("/api/v1/designs/<design_id>/experiment-recipes")

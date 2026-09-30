@@ -134,16 +134,24 @@ class LocalFlow(unittest.TestCase):
             self.assertTrue(0.5 - 1e-12 <= float(row["mass_ratio_1"]) / solvent_total <= 1)
 
         template = self.client.get(f"/api/v1/designs/{design_id}/recipe-template?target=Conductivity")
-        header = template.get_data(as_text=True).lstrip("\ufeff").strip()
+        template_text = template.get_data(as_text=True).lstrip("\ufeff")
+        header, *examples = template_text.strip().splitlines()
         self.assertEqual(header, "experiment_id,LiDFOB_mass_g,NDFA_mass_g,TTE_mass_g,VC_mass_g,Conductivity")
+        self.assertEqual([line.split(",")[0] for line in examples], ["EXAMPLE-01", "EXAMPLE-02"])
+        untouched = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                     json={"targets": ["Conductivity"], "csv": template_text})
+        self.assertEqual(untouched.status_code, 400)
+        self.assertIn("EXAMPLE", untouched.get_json()["message"])
         _, pool = server.table(directory / "pool.csv")
         existing = [pool[0][f"{name}_mass_g"] for name in ("LiDFOB", "NDFA", "TTE", "VC")]
         recipes = "\n".join([
-            header,
+            template_text.strip(),
             "E1," + ",".join(existing) + ",3.5",
             "E2,1.0,2.8,1.0,0.2,4",
             "E2b,1.0,2.8,1.0,0.2,6",
             "E3,2.0,3.0,,,2.5",
+            ",,,,,",
+            "",
         ])
         unknown = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                    json={"targets": ["Conductivity"],
@@ -157,6 +165,7 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual((summary["recipes"], summary["samples"], summary["matched_existing"],
                           summary["added"], summary["out_of_bounds"], summary["replicates_merged"]),
                          (4, 3, 1, 2, 1, 1))
+        self.assertEqual(summary["skipped_examples"], 2)
         self.assertEqual(summary["pool_size"], len(rows) + 2)
         _, mapping = server.table(directory / "experiment_mapping.csv")
         by_id = {row["experiment_id"]: row for row in mapping}
