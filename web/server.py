@@ -241,9 +241,8 @@ def design_file(design_id, name):
 @app.get("/api/v1/designs/<design_id>/experiment-template")
 def experiment_template(design_id):
     names = target_names(request.args.getlist("target"))
-    fields, rows = table(path_for("designs", design_id) / "converted" / "pool_catalog.csv")
-    return csv_response(fields + names, [dict(row, **{x: "" for x in names}) for row in rows],
-                        "experiment_template.csv")
+    fields, rows = recipe_template(path_for("designs", design_id), names, source="pool")
+    return csv_response(fields, rows, "experiment_template.csv")
 
 
 @app.post("/api/v1/designs/<design_id>/observations")

@@ -195,6 +195,39 @@ class LocalFlow(unittest.TestCase):
                                    json={"targets": ["Conductivity"], "csv": recipes})
         self.assertEqual(blocked.status_code, 400)
 
+    def test_pool_template_uses_recipe_layout(self):
+        design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        text = self.client.get(f"/api/v1/designs/{design_id}/experiment-template?target=Conductivity"
+                               ).get_data(as_text=True).lstrip("\ufeff")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        self.assertEqual(list(rows[0]), ["experiment_id", "LiDFOB_mass_g", "NDFA_mass_g",
+                                         "TTE_mass_g", "Conductivity"])
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual([row["experiment_id"] for row in rows], [row["sample_id"] for row in catalog])
+        for i, row in enumerate(rows[:3]):
+            row["Conductivity"] = str(3 + i)
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": stream.getvalue()})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        summary = imported.get_json()
+        self.assertEqual((summary["matched_existing"], summary["added"], summary["complete"],
+                          summary["skipped_unmeasured"], summary["pool_size"]),
+                         (3, 0, 3, len(rows) - 3, len(rows)))
+        _, experiment = server.table(directory / "experiment.csv")
+        self.assertEqual([row["sample_id"] for row in experiment],
+                         [row["sample_id"] for row in catalog[:3]])
+        seven = (server.ROOT / "pool" / "converted" / "experiment.csv").read_text(encoding="utf-8-sig")
+        foreign = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"], "csv": seven})
+        self.assertEqual(foreign.status_code, 400)
+        self.assertIn("FEC", foreign.get_json()["message"])
+
     def test_multi_objective_recommendation(self):
         response = self.client.post("/api/v1/designs", json=CONFIG)
         design_id = response.get_json()["design_id"]

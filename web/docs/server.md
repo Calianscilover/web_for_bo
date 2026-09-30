@@ -13,8 +13,9 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 创建/列出/查询设计 | `POST/GET /api/v1/designs`、`GET /api/v1/designs/{id}` |
 | 七元示例 | `POST /api/v1/designs/demo` |
 | 候选池、文件、实验模板 | `GET /api/v1/designs/{id}/candidates`、`files/{name}`、`experiment-template` |
-| 初始实验上传（配方来自候选池） | `POST /api/v1/designs/{id}/observations` |
-| 自有配方模板与导入（可不在候选池） | `GET /api/v1/designs/{id}/recipe-template`、`POST /api/v1/designs/{id}/experiment-recipes` |
+| 实验模板（列相同：experiment_id + 各组分 g + 目标） | `GET /api/v1/designs/{id}/experiment-template`（全部候选）、`recipe-template`（EXAMPLE 示例） |
+| 实验导入（候选池内外配方统一入口） | `POST /api/v1/designs/{id}/experiment-recipes` |
+| 旧版目录格式实验上传（仅 API 兼容，页面不再使用） | `POST /api/v1/designs/{id}/observations` |
 | 创建/查询优化 | `POST /api/v1/designs/{id}/optimization-runs`、`GET /api/v1/optimization-runs/{id}` |
 | 推荐/可视化/文件 | `GET /api/v1/optimization-runs/{id}/recommendations/{round}`、`visualization`、`files/{name}` |
 | 实测/模拟回传与下一轮 | `POST /api/v1/optimization-runs/{id}/feedback`、`simulate`、`next-round` |

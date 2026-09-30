@@ -105,7 +105,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 
 后端按 `sample_id` 与本设计的候选池逐行匹配，检查唯一性、所有原始配方字段及比例值与 `pool_catalog.csv` 一致、目标值为有限数值或留空、不能有池外样本。校验通过后保存为该优化运行的 `experiment.csv`；校验失败则逐行报告，不启动 BO。双目标训练只使用两个目标都完整的行；未测或部分实测行留在候选池。上传后的原始文件与规范化结果都应保留以便追溯。
 
-现有 BO 代码要求每条已测配方也在候选池中，因此**历史实验若不在当前候选池，不能仅靠改 CSV 列名导入**。模板上传路径仍对池外样本报错；另设“自有配方”路径（`pool/import_experiments.py`）：实验人员按组分填写实际称量质量，脚本把与候选池相同的配方对应到原行，把新配方作为固定候选追加到 `pool.csv` 并用原设置重新转换，再生成 `experiment.csv` 和 `experiment_mapping.csv`。`sample_id`、`chem_group_id` 是组成的确定性哈希，所以新旧候选编号一致，原有编号不变；不做最近邻替代或自动修改实测配方。重复配方的目标值取平均，越界配方保留并标记。
+现有 BO 代码要求每条已测配方也在候选池中，因此**历史实验若不在当前候选池，不能仅靠改 CSV 列名导入**。已实现版本把页面上传统一为按组分称量的配方格式（下文“自有配方”路径），候选池模板与自有配方模板列相同，上述目录格式契约仅保留在 `observations` API；“自有配方”路径（`pool/import_experiments.py`）：实验人员按组分填写实际称量质量，脚本把与候选池相同的配方对应到原行，把新配方作为固定候选追加到 `pool.csv` 并用原设置重新转换，再生成 `experiment.csv` 和 `experiment_mapping.csv`。`sample_id`、`chem_group_id` 是组成的确定性哈希，所以新旧候选编号一致，原有编号不变；不做最近邻替代或自动修改实测配方。重复配方的目标值取平均，越界配方保留并标记。
 
 目标名称拆成“界面显示名、单位、内部列名”三项，避免把单位或简称当作另一个指标：
 
@@ -124,7 +124,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | `GET /api/v1/designs/{id}` | 无 | 状态：`queued/running/succeeded/failed`；数量、错误信息、文件列表 |
 | `GET /api/v1/designs/{id}/candidates?page=&size=` | 分页与筛选参数 | 候选总数及当前页配方；不一次返回全池 |
 | `GET /api/v1/designs/{id}/files/{name}` | 文件名仅限白名单 | 下载 `config_snapshot.json`、`components.csv`、`pool_catalog.csv` 等 |
-| `GET /api/v1/designs/{id}/experiment-template?targets=...` | 所选目标内部列名 | 下载“完整候选池列 + 目标列”的 CSV 模板 |
+| `GET /api/v1/designs/{id}/experiment-template?target=...` | 所选目标内部列名 | 下载“experiment_id + 各组分质量(g) + 目标列”模板，行为全部候选（已实现版本；与配方模板列相同） |
 | `POST /api/v1/designs/{id}/observations` | 按模板填写的完整实验 CSV 与所选目标列 | 导入行数、已匹配行数、错误清单、规范化文件 ID |
 | `GET /api/v1/designs/{id}/recipe-template?target=...` | 所选目标内部列名 | 下载“experiment_id + 各组分质量(g) + 目标列”的配方模板 |
 | `POST /api/v1/designs/{id}/experiment-recipes` | 按组分填写的自有配方 CSV 与所选目标列 | 实验行数、配方数、已在池/新增/越界/重复合并数、候选池新规模 |
