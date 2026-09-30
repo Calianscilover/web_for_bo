@@ -86,7 +86,7 @@ def import_recipes(design_dir: Path, csv_text, names):
     sample_id/chem_group_id mapping is written to experiment_mapping.csv.
     """
     if not isinstance(csv_text, str) or len(csv_text.encode("utf-8")) > 20_000_000:
-        raise ValueError("CSV must be text under 20 MB")
+        raise ValueError("文件需为 20 MB 以内的 CSV 文本")
     return merge_recipes(design_dir, csv_text, names)
 
 
