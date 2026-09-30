@@ -44,6 +44,19 @@ def parse_args():
     parser.add_argument("--ref-point", nargs=2, type=float, default=None,
                         help="Reference values in original objective units")
     args = parser.parse_args()
+    if not np.isfinite(args.lengthscale_init) or args.lengthscale_init <= 0:
+        parser.error("lengthscale-init must be finite and positive")
+    if args.fit_maxiter <= 0:
+        parser.error("fit-maxiter must be positive")
+    if min(args.batch_size, args.mc_samples, args.pool_batch_size) <= 0:
+        parser.error("batch-size, mc-samples and pool-batch-size must be positive")
+    if args.noise_std is not None and (not np.all(np.isfinite(args.noise_std))
+                                       or min(args.noise_std) <= 0):
+        parser.error("noise-std values must be finite and positive")
+    if args.ref_point is not None and not np.all(np.isfinite(args.ref_point)):
+        parser.error("ref-point values must be finite")
+    if args.kernel == "default" and not args.ard:
+        parser.error("--no-ard requires --kernel rbf or matern")
     return args
 
 
