@@ -76,7 +76,21 @@
         <div class="section-content">
           <div class="target-summary"><span>优化目标</span><strong id="target-summary">—</strong><a href="#experiment" class="text-button">修改</a></div>
           <div class="field-row"><label>每轮推荐数<input id="batch-size" type="number" min="1" max="20" value="3"></label><label>采集采样数 <small>MC 样本</small><input id="mc-samples" type="number" min="16" value="128"></label></div>
-          <details><summary>高级模型参数</summary><div class="field-row"><label>拟合最大迭代<input id="fit-maxiter" type="number" min="10" value="100"></label><label>随机种子<input id="bo-seed" type="number" value="2026"></label></div></details>
+          <details id="hyperparameters" class="hyperparameters"><summary>模型超参数设置</summary>
+            <p class="hp-note">单目标调用 qLogNEI，双目标调用 qLogNEHVI（每个目标各拟合一个高斯过程）；设置在本次运行的所有轮次中保持不变。</p>
+            <h4>高斯过程核</h4>
+            <div class="field-row"><label>核函数<select id="hp-kernel"><option value="default">默认（BoTorch：RBF + ARD，维度自适应先验）</option><option value="rbf">RBF</option><option value="matern">Matérn</option></select></label><label>Matérn ν <small>仅 Matérn</small><select id="hp-matern-nu"><option value="0.5">0.5（粗糙）</option><option value="1.5">1.5</option><option value="2.5" selected>2.5（平滑）</option></select></label></div>
+            <div class="field-row"><label>初始长度尺度 <small>输入已归一化到 0–1</small><input id="hp-lengthscale" type="number" min="0.001" max="100" step="any" value="0.5"></label><label>ARD <small>自动相关性判定</small><span class="check-line"><input id="hp-ard" type="checkbox" checked>每个输入维度独立长度尺度</span></label></div>
+            <h4>噪声与拟合</h4>
+            <div class="field-row"><label><span id="hp-noise-label-0">观测噪声标准差</span> <small>留空自动</small><input id="hp-noise-0" type="number" min="0" step="any" placeholder="自动估计"></label><label id="hp-noise-field-1"><span id="hp-noise-label-1">观测噪声标准差</span> <small>留空自动</small><input id="hp-noise-1" type="number" min="0" step="any" placeholder="自动估计"></label></div>
+            <div class="field-row"><label>拟合最大迭代<input id="fit-maxiter" type="number" min="10" max="1000" value="100"></label><label>输入特征<select id="hp-feature-basis"><option value="mass">质量分数</option><option value="mole">摩尔分数</option></select></label></div>
+            <h4>采集与候选评分</h4>
+            <div class="field-row"><label>候选评分批大小 <small>每批送入采集函数的候选数</small><input id="hp-pool-batch" type="number" min="16" max="4096" value="128"></label><label>随机种子 <small>MC 采样与选点</small><input id="bo-seed" type="number" min="0" value="2026"></label></div>
+            <div id="hp-ref-group" hidden><h4>超体积参考点 <small>双目标，原始单位</small></h4>
+              <div class="field-row"><label><span id="hp-ref-label-0">目标 1 参考值</span><input id="hp-ref-0" type="number" step="any" placeholder="自动"></label><label><span id="hp-ref-label-1">目标 2 参考值</span><input id="hp-ref-1" type="number" step="any" placeholder="自动"></label></div>
+              <p class="hp-note">留空时取初始已测值中最差的一端再向外扩展 10%，之后各轮固定；参考点应比所有值得关注的配方都差，否则超体积为 0。</p></div>
+            <button type="button" class="text-button" id="hp-reset">恢复默认</button>
+          </details>
           <div class="actions"><button id="run" class="primary">开始优化 <span>↗</span></button><span class="micro-status" id="run-status">等待运行</span></div>
           <div id="run-summary" class="run-summary" hidden></div>
         </div>
