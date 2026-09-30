@@ -28,7 +28,7 @@ python algorithms/visualize_bo.py --run-dir bo_test/runs/<run_id>
 
 它输出 `visualization_<round>.json`。拟合散点是训练集后验均值诊断，不代表留出集预测精度；超体积只由已测值计算，参考点沿用 `training_summary.json` 中供 qLogNEHVI 使用的固定值。设计参考：[Bgolearn 文档](https://bgolearn.github.io/docs/) 与 [BoTorch 多目标优化教程](https://botorch.org/docs/v0.17.2/tutorials/multi_objective_bo)。
 
-温度目前仅记录在设计配置中，不进入 BO 特征。新建空间支持一个锂盐与两个及以上溶剂；原七元示例中的添加剂仍通过已存在的候选池导入。目标名以 CSV 列名为准，示例使用 `Conductivity` 和 `logCE`，其中 `logCE` 不会自动等同于 `LCE`。
+温度目前仅记录在设计配置中，不进入 BO 特征。新建空间支持一个锂盐、两个及以上溶剂和可选添加剂（功能添加剂或锂盐添加剂，范围以电解液总质量为分母）。实验数据可按候选池模板上传，也可按组分称量上传不在候选池中的自有配方，系统会把新配方并入候选池并生成一致的 `sample_id`/`chem_group_id`。目标名以 CSV 列名为准，示例使用 `Conductivity` 和 `logCE`，其中 `logCE` 不会自动等同于 `LCE`。
 
 ## 验证
 
