@@ -5,7 +5,8 @@ Input is a recipe CSV: optional ``experiment_id``, one ``<component>_mass_g`` (o
 Each recipe is matched to pool.csv by its mass fractions (10 decimals, the precision of
 sample_id). Unmatched recipes are appended to pool.csv and the pool is reconverted, so
 sample_id and chem_group_id come from the same hashes as every sampled candidate.
-Replicates of one recipe are averaged per target.
+Replicates of one recipe are averaged per target. Rows whose experiment_id starts with
+EXAMPLE (the template's worked examples) and fully blank rows are skipped.
 
 Outputs in the design directory: pool.csv (appended), converted/, experiment.csv
 (catalog columns + targets) and experiment_mapping.csv (experiment_id -> sample_id).
@@ -31,15 +32,18 @@ MAPPING_FIELDS = ["experiment_id", "recipe_row", "sample_id", "chem_group_id", "
                   "within_design_bounds", "replicates"]
 KEY_DECIMALS = 10
 BOUND_TOLERANCE = 1e-9
+EXAMPLE_PREFIX = "EXAMPLE"
 
 
-def read_csv_text(text):
+def read_csv_text(text, strict=True):
+    """Parse CSV text; strict=False keeps ragged rows (as spreadsheets export) for parse_recipes."""
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
-    fields = reader.fieldnames or []
+    fields = [field.strip() for field in reader.fieldnames or []]
     if not fields or len(fields) != len(set(fields)):
         raise ValueError("Recipe CSV has missing or duplicate headers")
+    reader.fieldnames = fields
     rows = list(reader)
-    if any(None in row or None in row.values() for row in rows):
+    if strict and any(None in row or None in row.values() for row in rows):
         raise ValueError("Recipe CSV has malformed rows")
     return fields, rows
 
@@ -80,6 +84,28 @@ def template_fields(design_dir, targets):
     return ["experiment_id", *(f"{item['name']}_mass_g" for item in components), *targets]
 
 
+def template(design_dir, targets):
+    """Header plus EXAMPLE rows: one recipe copied from the pool, one weighed freely.
+
+    Unused components are left blank; EXAMPLE rows are skipped on import.
+    """
+    design_dir = Path(design_dir)
+    fields = template_fields(design_dir, targets)
+    _, pool = read_csv_file(design_dir / "pool.csv")
+    mass_fields = fields[1:len(fields) - len(targets)]
+    examples = []
+    for number, (row, digits) in enumerate([(pool[0], None), (pool[len(pool) // 2], 2)], 1):
+        example = {"experiment_id": f"{EXAMPLE_PREFIX}-{number:02d}"}
+        for field in mass_fields:
+            mass = float(row[field] or 0)
+            example[field] = "" if mass <= 0 else (row[field] if digits is None
+                                                   else f"{mass:.{digits}f}")
+        example.update({name: f"{1.23 * (i + 1) + 0.1 * number:.2f}"
+                        for i, name in enumerate(targets)})
+        examples.append(example)
+    return fields, examples
+
+
 def parse_number(raw, label):
     try:
         value = float(raw)
@@ -107,7 +133,16 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
     if missing:
         raise ValueError(f"Recipe CSV is missing target columns: {', '.join(missing)}")
     recipes = []
+    skipped = 0
     for line, row in enumerate(rows, 2):
+        if None in row and any((value or "").strip() for value in row[None]):
+            raise ValueError(f"Row {line}: more values than header columns")
+        experiment_id = (row.get("experiment_id") or "").strip()
+        if experiment_id.upper().startswith(EXAMPLE_PREFIX):
+            skipped += 1
+            continue
+        if not any((row.get(field) or "").strip() for field in fields):
+            continue
         values = []
         for column in by_suffix[suffix]:
             raw = (row.get(column) or "").strip()
@@ -127,14 +162,15 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
             measured[name] = parse_number(raw, f"Row {line}: {name}") if raw else None
         recipes.append({
             "row": line,
-            "experiment_id": (row.get("experiment_id") or "").strip() or f"row_{line}",
+            "experiment_id": experiment_id or f"row_{line}",
             "fractions": fractions,
             "masses": values if suffix == "_mass_g" else [x * batch_mass for x in fractions],
             "targets": measured,
         })
     if not recipes:
-        raise ValueError("Recipe CSV has no rows")
-    return recipes
+        raise ValueError(f"Recipe CSV has no experiment rows ({skipped} {EXAMPLE_PREFIX} rows "
+                         "were ignored); add your own rows below the examples")
+    return recipes, skipped
 
 
 def bounds_checker(config, names):
@@ -201,9 +237,9 @@ def import_recipes(design_dir, csv_text, targets):
     if any(name in reserved or name.startswith(("compound_", "smiles_", "mass_ratio_", "mole_ratio_"))
            for name in targets):
         raise ValueError("Target columns must not collide with candidate pool columns")
-    fields, rows = read_csv_text(csv_text)
-    recipes = parse_recipes(fields, rows, names, targets,
-                            float(config.get("batch_mass_g", 5)))
+    fields, rows = read_csv_text(csv_text, strict=False)
+    recipes, skipped = parse_recipes(fields, rows, names, targets,
+                                     float(config.get("batch_mass_g", 5)))
     pool_path = design_dir / "pool.csv"
     original_text = pool_path.read_text(encoding="utf-8-sig")
     pool_fields, pool_rows = read_csv_text(original_text)
@@ -260,6 +296,7 @@ def import_recipes(design_dir, csv_text, targets):
         "replicates_merged": len(recipes) - len(groups),
         "complete": sum(all(row[name] for name in targets) for row in experiment_rows),
         "pool_size": len(catalog),
+        "skipped_examples": skipped,
     }
 
 
@@ -269,10 +306,10 @@ def main(argv=None):
     parser.add_argument("--design-dir", type=Path, required=True)
     parser.add_argument("--recipes", type=Path, help="recipe CSV to import")
     parser.add_argument("--targets", nargs="+", required=True)
-    parser.add_argument("--template", type=Path, help="write an empty recipe template and exit")
+    parser.add_argument("--template", type=Path, help="write a recipe template with EXAMPLE rows and exit")
     args = parser.parse_args(argv)
     if args.template:
-        write_csv(args.template, template_fields(args.design_dir, args.targets), [])
+        write_csv(args.template, *template(args.design_dir, args.targets))
         print(args.template)
         return
     if not args.recipes:
