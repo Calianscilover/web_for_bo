@@ -132,7 +132,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | `GET /api/v1/optimization-runs/{run_id}` | 无 | 当前轮次、训练/预测/推荐状态、产物链接 |
 | `GET /api/v1/optimization-runs/{run_id}/recommendations/{round}` | 轮次 | 配方表预览、目标列、CSV 下载链接 |
 
-错误响应统一包含 `code`、`message` 和可选的 `field`/`row`；例如无效 SMILES、区间不可行、上传的 `sample_id` 不在候选池、实验特征与候选池冲突、完整实测少于两条、上一轮推荐尚未填齐。任务重复提交使用幂等键，避免同一设计被并发写入。
+错误响应统一包含 `code`、`message` 和可选的 `details`（逐条说明，如「第 3 行 NDFA_mass_g：“abc”不是数字」，最多列出 20 处）；实验 CSV 校验会检查完所有行后一次性报告，存在任何问题时不写入数据；例如无效 SMILES、区间不可行、上传的 `sample_id` 不在候选池、实验特征与候选池冲突、完整实测少于两条、上一轮推荐尚未填齐。任务重复提交使用幂等键，避免同一设计被并发写入。
 
 ## 7. 运行规则与界面回传
 

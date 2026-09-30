@@ -36,14 +36,33 @@ MAPPING_FIELDS = ["experiment_id", "recipe_row", "sample_id", "chem_group_id", "
 KEY_DECIMALS = 10
 BOUND_TOLERANCE = 1e-9
 EXAMPLE_PREFIX = "EXAMPLE"
+MAX_DETAILS = 20
+
+
+class RecipeError(ValueError):
+    """Upload problem: a one-line summary plus per-row details shown on the web page."""
+
+    def __init__(self, message, details=()):
+        super().__init__(message)
+        self.details = list(details)
 
 
 def read_csv_text(text, strict=True):
     """Parse CSV text; strict=False keeps ragged rows (as spreadsheets export) for parse_recipes."""
+    if not text.strip():
+        raise RecipeError("文件为空", ["请下载模板，填写后再上传"])
+    if "\x00" in text or text.startswith("PK"):
+        raise RecipeError("文件不是 CSV 文本（可能是 Excel .xlsx）",
+                          ["请在 Excel 中「另存为 → CSV UTF-8（逗号分隔）」后上传"])
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
     fields = [field.strip() for field in reader.fieldnames or []]
-    if not fields or len(fields) != len(set(fields)):
-        raise ValueError("Recipe CSV has missing or duplicate headers")
+    if len(fields) == 1 and any(separator in fields[0] for separator in ";\t"):
+        raise RecipeError("列分隔符不是英文逗号", ["请另存为「CSV UTF-8（逗号分隔）」后上传"])
+    duplicates = sorted({field for field in fields if fields.count(field) > 1})
+    if not fields or "" in fields or duplicates:
+        raise RecipeError("表头有空列名或重复列名",
+                          [f"重复的列：{', '.join(duplicates)}"] if duplicates else
+                          ["请保留模板的表头行，删除多余的空白列"])
     reader.fieldnames = fields
     rows = list(reader)
     if strict and any(None in row or None in row.values() for row in rows):
@@ -68,7 +87,8 @@ def load_design(design_dir):
     config_path = design_dir / "config_snapshot.json"
     pool_path = design_dir / "pool.csv"
     if not config_path.exists() or not pool_path.exists():
-        raise ValueError("Design has no pool.csv/config_snapshot.json; regenerate it or reload the demo")
+        raise RecipeError("该设计缺少 pool.csv 或 config_snapshot.json（可能由旧版本创建）",
+                          ["请重新生成候选池或重新载入七元示例后再导入"])
     config = json.loads(config_path.read_text(encoding="utf-8"))
     components = []
     for item in config.get("components", []):
@@ -120,13 +140,19 @@ def template(design_dir, targets, source="examples"):
     return fields, examples
 
 
-def parse_number(raw, label):
+def parse_number(raw, line, column, problems, nonnegative):
+    """Return the value, or None after recording why it is invalid."""
     try:
         value = float(raw)
-    except ValueError as error:
-        raise ValueError(f"{label} must be numeric") from error
+    except ValueError:
+        problems.append(f"第 {line} 行 {column}：“{raw}”不是数字")
+        return None
     if not math.isfinite(value):
-        raise ValueError(f"{label} must be finite")
+        problems.append(f"第 {line} 行 {column}：必须是有限数值")
+        return None
+    if nonnegative and value < 0:
+        problems.append(f"第 {line} 行 {column}：质量不能为负数（{raw}）")
+        return None
     return value
 
 
@@ -140,7 +166,11 @@ def catalog_to_fractions(fields, rows, names):
         for slot in slots:
             name = (row.get(f"compound_{slot}") or "").strip()
             ratio = (row.get(f"mass_ratio_{slot}") or "").strip()
-            if not name or not ratio or float(ratio) == 0:
+            try:
+                present = float(ratio) != 0
+            except ValueError:
+                present = bool(ratio)
+            if not name or not present:
                 continue
             if name not in names:
                 unknown.add(name)
@@ -148,8 +178,11 @@ def catalog_to_fractions(fields, rows, names):
         converted.append({"experiment_id": row.get("sample_id") or row.get("experiment_id") or "",
                           **values, **{k: v for k, v in row.items() if k not in values}})
     if unknown:
-        raise ValueError(f"CSV contains components outside this design: {', '.join(sorted(unknown))}; "
-                         "download the template of the current design or regenerate the pool")
+        raise RecipeError("文件含有当前设计之外的组分", [
+            f"多出的组分：{', '.join(sorted(unknown))}",
+            f"当前设计的组分：{', '.join(names)}",
+            "请下载当前设计的模板重新填写，或在「配方空间」加入这些组分并重新生成候选池",
+        ])
     extra = [field for field in fields if field not in {"experiment_id"}]
     return ["experiment_id", *(f"{name}_mass_fraction" for name in names), *extra], converted
 
@@ -163,45 +196,63 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
                if field.endswith(("_mass_g", "_mass_fraction"))
                and field not in by_suffix["_mass_g"] + by_suffix["_mass_fraction"]]
     if unknown:
-        raise ValueError("Recipe columns name components outside this design: "
-                         f"{', '.join(unknown)}; add them to the formulation space and regenerate")
+        raise RecipeError("文件含有当前设计之外的组分列", [
+            f"多出的列：{', '.join(unknown)}",
+            f"当前设计的组分：{', '.join(names)}",
+            "请下载当前设计的模板重新填写，或在「配方空间」加入这些组分并重新生成候选池",
+        ])
     uses = [suffix for suffix, columns in by_suffix.items() if set(columns) & set(fields)]
-    if len(uses) != 1:
-        raise ValueError("Use either <component>_mass_g or <component>_mass_fraction columns")
+    if not uses:
+        raise RecipeError("没有找到组分质量列", [
+            f"需要的列：{', '.join(by_suffix['_mass_g'])}（或对应的 *_mass_fraction 质量分数列）",
+            f"文件中的列：{', '.join(fields)}",
+            "请下载模板并保留模板表头",
+        ])
+    if len(uses) > 1:
+        raise RecipeError("质量列（*_mass_g）与质量分数列（*_mass_fraction）不能混用",
+                          ["整张表请统一使用一种，推荐模板中的 *_mass_g（称量质量，g）"])
     suffix = uses[0]
     missing = [name for name in targets if name not in fields]
     if missing:
-        raise ValueError(f"Recipe CSV is missing target columns: {', '.join(missing)}")
-    recipes = []
+        others = [field for field in fields if field not in by_suffix[suffix] and field != "experiment_id"]
+        raise RecipeError(f"缺少目标列：{', '.join(missing)}", [
+            f"当前选择的目标：{', '.join(targets)}",
+            f"文件中的其他列：{', '.join(others) or '无'}",
+            "列名需完全一致（区分大小写）：请在上方修改目标列名，或修改文件表头后重新上传",
+        ])
+    recipes, problems = [], []
     skipped = {"examples": 0, "unmeasured": 0}
     for line, row in enumerate(rows, 2):
         if None in row and any((value or "").strip() for value in row[None]):
-            raise ValueError(f"Row {line}: more values than header columns")
+            problems.append(f"第 {line} 行：数值个数多于表头列数（可能多了逗号）")
+            continue
         experiment_id = (row.get("experiment_id") or "").strip()
         if experiment_id.upper().startswith(EXAMPLE_PREFIX):
             skipped["examples"] += 1
             continue
         if not any((row.get(field) or "").strip() for field in fields):
             continue
+        count = len(problems)
         measured = {}
         for name in targets:
             raw = (row.get(name) or "").strip()
-            measured[name] = parse_number(raw, f"Row {line}: {name}") if raw else None
-        if all(value is None for value in measured.values()):
+            measured[name] = parse_number(raw, line, name, problems, False) if raw else None
+        if len(problems) == count and all(value is None for value in measured.values()):
             skipped["unmeasured"] += 1
             continue
         values = []
         for column in by_suffix[suffix]:
             raw = (row.get(column) or "").strip()
-            value = parse_number(raw, f"Row {line}: {column}") if raw else 0.0
-            if value < 0:
-                raise ValueError(f"Row {line}: {column} must be nonnegative")
-            values.append(value)
+            values.append(parse_number(raw, line, column, problems, True) if raw else 0.0)
+        if len(problems) > count:
+            continue
         total = sum(values)
         if total <= 0:
-            raise ValueError(f"Row {line}: recipe has no components")
+            problems.append(f"第 {line} 行：填写了目标值，但所有组分质量都为空或 0")
+            continue
         if suffix == "_mass_fraction" and abs(total - 1) > 1e-6:
-            raise ValueError(f"Row {line}: mass fractions sum to {total:.6g}, expected 1")
+            problems.append(f"第 {line} 行：质量分数之和为 {total:.4g}，应为 1")
+            continue
         fractions = [value / total for value in values]
         recipes.append({
             "row": line,
@@ -210,10 +261,16 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
             "masses": values if suffix == "_mass_g" else [x * batch_mass for x in fractions],
             "targets": measured,
         })
+    if problems:
+        extra = len(problems) - MAX_DETAILS
+        raise RecipeError(f"有 {len(problems)} 处数据不符合规范，本次未导入任何数据",
+                          problems[:MAX_DETAILS] + ([f"……另有 {extra} 处，修正后重新上传可继续检查"]
+                                                    if extra > 0 else []))
     if not recipes:
-        raise ValueError(f"CSV has no measured rows ({skipped['examples']} {EXAMPLE_PREFIX} rows and "
-                         f"{skipped['unmeasured']} rows without target values were ignored); "
-                         "fill the target columns of the experiments you ran")
+        raise RecipeError("没有可导入的实验数据", [
+            f"已跳过 {skipped['examples']} 行 {EXAMPLE_PREFIX} 示例、{skipped['unmeasured']} 行未填目标值",
+            f"请在做过实验的行填写目标值（{', '.join(targets)}）后重新上传",
+        ])
     return recipes, skipped
 
 
@@ -280,7 +337,8 @@ def import_recipes(design_dir, csv_text, targets):
                 "source_row", "presence_pattern"}
     if any(name in reserved or name.startswith(("compound_", "smiles_", "mass_ratio_", "mole_ratio_"))
            for name in targets):
-        raise ValueError("Target columns must not collide with candidate pool columns")
+        raise RecipeError("目标列名与候选池内部字段重名",
+                          ["请换一个目标列名（如 Conductivity、logCE），并同步修改文件表头"])
     fields, rows = read_csv_text(csv_text, strict=False)
     recipes, skipped = parse_recipes(fields, rows, names, targets,
                                      float(config.get("batch_mass_g", 5)))
