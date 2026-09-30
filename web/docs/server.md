@@ -2,7 +2,7 @@
 
 ## 当前职责
 
-Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七元示例、查询状态/候选池/文件/实验模板；观测路由校验并保存初始 `experiment.csv`；优化路由创建运行、查询状态、下载推荐/预测/可视化；回传路由保存真实或模拟结果并启动下一轮。具体动作委托给 `bayesian_optimization/step_01...step_04`。
+Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七元示例、查询状态/候选池/文件/实验模板；观测路由校验并保存初始 `experiment.csv`，或把按组分称量填写的自有配方并入候选池后生成 `experiment.csv` 与 `experiment_mapping.csv`（已有运行的设计拒绝再次导入）；优化路由创建运行、查询状态、下载推荐/预测/可视化；回传路由保存真实或模拟结果并启动下一轮。具体动作委托给 `bayesian_optimization/step_01...step_04`。
 
 `OUTPUT` 默认为仓库根目录的 `bo_test/`。`designs/<design_id>` 保存输入和候选池；`runs/<run_id>` 保存算法结果和轮次文件。`status.json` 是当前任务状态，`feedback_sources` 记录真实/模拟来源。网页通过轮询查询异步任务。ID 和可下载文件名都使用白名单校验。
 
@@ -13,7 +13,8 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 创建/列出/查询设计 | `POST/GET /api/v1/designs`、`GET /api/v1/designs/{id}` |
 | 七元示例 | `POST /api/v1/designs/demo` |
 | 候选池、文件、实验模板 | `GET /api/v1/designs/{id}/candidates`、`files/{name}`、`experiment-template` |
-| 初始实验上传 | `POST /api/v1/designs/{id}/observations` |
+| 初始实验上传（配方来自候选池） | `POST /api/v1/designs/{id}/observations` |
+| 自有配方模板与导入（可不在候选池） | `GET /api/v1/designs/{id}/recipe-template`、`POST /api/v1/designs/{id}/experiment-recipes` |
 | 创建/查询优化 | `POST /api/v1/designs/{id}/optimization-runs`、`GET /api/v1/optimization-runs/{id}` |
 | 推荐/可视化/文件 | `GET /api/v1/optimization-runs/{id}/recommendations/{round}`、`visualization`、`files/{name}` |
 | 实测/模拟回传与下一轮 | `POST /api/v1/optimization-runs/{id}/feedback`、`simulate`、`next-round` |

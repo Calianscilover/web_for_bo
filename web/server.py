@@ -23,8 +23,8 @@ sys.path.insert(0, str(ROOT))
 from bayesian_optimization.step_01_formulation.actions import generate_formulations  # noqa: E402
 from bayesian_optimization.step_02_pool.actions import convert_formulations, import_demo  # noqa: E402
 from bayesian_optimization.step_03_experiment.actions import (  # noqa: E402
-    simulate_feedback as simulate_experiment, synchronize_feedback,
-    validate_upload, write_table)
+    import_recipes, recipe_template, simulate_feedback as simulate_experiment,
+    synchronize_feedback, validate_upload, write_table)
 from bayesian_optimization.step_04_optimization.actions import (  # noqa: E402
     execute_round, refresh_visualization)
 
@@ -38,7 +38,7 @@ CATALOG = ROOT / "pool" / "converted" / "pool_catalog.csv"
 EXPERIMENT = ROOT / "pool" / "converted" / "experiment.csv"
 DESIGN_FILES = {"config_snapshot.json", "components.csv", "feasible_candidates.csv",
                 "pool.csv", "pool_catalog.csv", "pool_features.csv", "pool_manifest.json",
-                "experiment.csv"}
+                "experiment.csv", "experiment_mapping.csv"}
 RUN_FILE = re.compile(r"^(recommendation_[1-9]\d*|candidate_predictions(?:_[1-9]\d*)?|observation|training_summary|visualization_[1-9]\d*)\.(csv|json)$")
 run_locks = {}
 locks_lock = Lock()
@@ -257,6 +257,29 @@ def upload_observations(design_id):
         raise ValueError("A run already uses this experiment; create a new design to replace it")
     write_table(directory / "experiment.csv", fields, rows)
     return jsonify({"rows": len(rows), "complete": complete, "targets": names})
+
+
+@app.get("/api/v1/designs/<design_id>/recipe-template")
+def recipe_template_csv(design_id):
+    names = target_names(request.args.getlist("target"))
+    fields = recipe_template(path_for("designs", design_id), names)
+    return csv_response(fields, [], "recipe_template.csv")
+
+
+@app.post("/api/v1/designs/<design_id>/experiment-recipes")
+def upload_recipes(design_id):
+    directory = path_for("designs", design_id)
+    payload = request.get_json(force=True)
+    names = target_names(payload.get("targets"))
+    state = read_json(directory / "status.json")
+    if state.get("status") != "succeeded":
+        raise ValueError("The candidate pool is not ready")
+    if any((OUTPUT / "runs").glob(f"*/design_{design_id}")):
+        raise ValueError("A run already uses this experiment; create a new design to replace it")
+    summary = import_recipes(directory, payload.get("csv"), names)
+    state.setdefault("counts", {})["feasible"] = summary["pool_size"]
+    save_json(directory / "status.json", state)
+    return jsonify(dict(summary, targets=names))
 
 
 def execute_bo(run_dir):

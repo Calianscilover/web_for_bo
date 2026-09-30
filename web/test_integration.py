@@ -119,6 +119,73 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual(third_visual["counts"]["real_feedback"], 2)
         self.assertEqual(len(third_visual["progress"]), 3)
 
+    def test_additive_pool_and_recipe_import(self):
+        config = dict(CONFIG, additives=[{"name": "VC", "smiles": "O=C1OC=CO1",
+                                          "final_mass_fraction_bounds": [0.01, 0.05]}])
+        design_id = self.client.post("/api/v1/designs", json=config).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        fields, rows = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual(rows[0]["compound_3"], "VC")
+        for row in rows:
+            self.assertEqual(row["functional_additives"], "VC")
+            self.assertTrue(0.01 - 1e-12 <= float(row["mass_ratio_3"]) <= 0.05 + 1e-12)
+            solvent_total = float(row["mass_ratio_1"]) + float(row["mass_ratio_2"])
+            self.assertTrue(0.5 - 1e-12 <= float(row["mass_ratio_1"]) / solvent_total <= 1)
+
+        template = self.client.get(f"/api/v1/designs/{design_id}/recipe-template?target=Conductivity")
+        header = template.get_data(as_text=True).lstrip("\ufeff").strip()
+        self.assertEqual(header, "experiment_id,LiDFOB_mass_g,NDFA_mass_g,TTE_mass_g,VC_mass_g,Conductivity")
+        _, pool = server.table(directory / "pool.csv")
+        existing = [pool[0][f"{name}_mass_g"] for name in ("LiDFOB", "NDFA", "TTE", "VC")]
+        recipes = "\n".join([
+            header,
+            "E1," + ",".join(existing) + ",3.5",
+            "E2,1.0,2.8,1.0,0.2,4",
+            "E2b,1.0,2.8,1.0,0.2,6",
+            "E3,2.0,3.0,,,2.5",
+        ])
+        unknown = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"],
+                                         "csv": "experiment_id,LiDFOB_mass_g,FEC_mass_g,Conductivity\nX,1,1,1\n"})
+        self.assertEqual(unknown.status_code, 400)
+        self.assertIn("FEC_mass_g", unknown.get_json()["message"])
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        summary = imported.get_json()
+        self.assertEqual((summary["recipes"], summary["samples"], summary["matched_existing"],
+                          summary["added"], summary["out_of_bounds"], summary["replicates_merged"]),
+                         (4, 3, 1, 2, 1, 1))
+        self.assertEqual(summary["pool_size"], len(rows) + 2)
+        _, mapping = server.table(directory / "experiment_mapping.csv")
+        by_id = {row["experiment_id"]: row for row in mapping}
+        self.assertEqual(by_id["E1"]["sample_id"], rows[0]["sample_id"])
+        self.assertEqual(by_id["E1"]["pool_status"], "matched_existing")
+        self.assertEqual(by_id["E2"]["sample_id"], by_id["E2b"]["sample_id"])
+        self.assertEqual(by_id["E2"]["within_design_bounds"], "true")
+        self.assertEqual(by_id["E3"]["within_design_bounds"], "false")
+        self.assertNotEqual(by_id["E3"]["chem_group_id"], by_id["E2"]["chem_group_id"])
+        _, experiment = server.table(directory / "experiment.csv")
+        values = {row["sample_id"]: float(row["Conductivity"]) for row in experiment}
+        self.assertEqual(values[by_id["E2"]["sample_id"]], 5)
+        again = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                 json={"targets": ["Conductivity"], "csv": recipes}).get_json()
+        self.assertEqual((again["added"], again["pool_size"]), (0, summary["pool_size"]))
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual([row["sample_id"] for row in catalog[:len(rows)]],
+                         [row["sample_id"] for row in rows])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        info = self.wait(f"/api/v1/optimization-runs/{run.get_json()['run_id']}")
+        self.assertEqual(info["round"], 1)
+        blocked = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(blocked.status_code, 400)
+
     def test_multi_objective_recommendation(self):
         response = self.client.post("/api/v1/designs", json=CONFIG)
         design_id = response.get_json()["design_id"]

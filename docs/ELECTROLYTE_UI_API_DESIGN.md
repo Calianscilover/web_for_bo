@@ -88,7 +88,7 @@ flowchart LR
 3. 计算各组分最终质量分数 `w_s=s`、`w_i=(1-s)q_i`；按 `batch_mass_g` 与 `mass_step_g` 离散成可称量质量，再以离散后的值重算质量分数与摩尔分数。复核溶剂池范围及总质量，删除不合格和质量向量重复的点。
 4. 输出 `feasible_candidates.csv` 和供转换脚本读取的 `pool.csv`。每行至少包括 `presence_pattern`，以及对每个组分的 `<name>_mass_g`、`<name>_mass_fraction`、`<name>_mole_fraction`。`pool.csv` 可与 `feasible_candidates.csv` 使用相同内容。温度只保存在 JSON 与 UI 任务元数据中。
 
-首版输入限定为一个主锂盐和若干溶剂。当前七元案例中的 LiNO3、VC、TMSP 等专用添加剂角色仍可由原有七元脚本继续处理；将添加剂也做成前端可配置输入属于下一轮扩展。
+输入为一个主锂盐、若干溶剂和可选添加剂。添加剂角色为 `functional_additive`（如 VC、TMSP）或 `salt_additive`（如 LiNO3），其范围与锂盐一样以电解液总质量为分母；溶剂分享扣除盐与添加剂后的质量，即 `w_i=(1-s-Σa)q_i`。
 
 `convert_pool.py` 要求配置中的每个组分有 `name`、受支持的 `role`、`smiles`；池表必须有 `presence_pattern`，以及每个组分的 `<name>_mass_g`、`<name>_mass_fraction`、`<name>_mole_fraction`。输出 `pool_catalog.csv` 含 `sample_id`、化学组 ID、各组分的 `compound_i`、`smiles_i`、`mass_ratio_i`、`mole_ratio_i`。转换时建议明确传 `--pool`、`--config`、`--output-dir`；`--feature-basis mass` 与 BO 当前默认质量分数特征一致。`pool_catalog.csv` 同时保留两套比例，所以以后仍可选择摩尔分数训练。
 
@@ -105,7 +105,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 
 后端按 `sample_id` 与本设计的候选池逐行匹配，检查唯一性、所有原始配方字段及比例值与 `pool_catalog.csv` 一致、目标值为有限数值或留空、不能有池外样本。校验通过后保存为该优化运行的 `experiment.csv`；校验失败则逐行报告，不启动 BO。双目标训练只使用两个目标都完整的行；未测或部分实测行留在候选池。上传后的原始文件与规范化结果都应保留以便追溯。
 
-现有 BO 代码要求每条已测配方也在候选池中，因此**历史实验若不在当前候选池，不能仅靠改 CSV 列名导入**。首版界面明确报错并列出这些样本；需要纳入时，应先把该配方作为固定候选加入撒点结果、重新转换候选池，再使用新模板上传实测值，不做最近邻替代或自动修改实测配方。
+现有 BO 代码要求每条已测配方也在候选池中，因此**历史实验若不在当前候选池，不能仅靠改 CSV 列名导入**。模板上传路径仍对池外样本报错；另设“自有配方”路径（`pool/import_experiments.py`）：实验人员按组分填写实际称量质量，脚本把与候选池相同的配方对应到原行，把新配方作为固定候选追加到 `pool.csv` 并用原设置重新转换，再生成 `experiment.csv` 和 `experiment_mapping.csv`。`sample_id`、`chem_group_id` 是组成的确定性哈希，所以新旧候选编号一致，原有编号不变；不做最近邻替代或自动修改实测配方。重复配方的目标值取平均，越界配方保留并标记。
 
 目标名称拆成“界面显示名、单位、内部列名”三项，避免把单位或简称当作另一个指标：
 
@@ -126,6 +126,8 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 | `GET /api/v1/designs/{id}/files/{name}` | 文件名仅限白名单 | 下载 `config_snapshot.json`、`components.csv`、`pool_catalog.csv` 等 |
 | `GET /api/v1/designs/{id}/experiment-template?targets=...` | 所选目标内部列名 | 下载“完整候选池列 + 目标列”的 CSV 模板 |
 | `POST /api/v1/designs/{id}/observations` | 按模板填写的完整实验 CSV 与所选目标列 | 导入行数、已匹配行数、错误清单、规范化文件 ID |
+| `GET /api/v1/designs/{id}/recipe-template?target=...` | 所选目标内部列名 | 下载“experiment_id + 各组分质量(g) + 目标列”的配方模板 |
+| `POST /api/v1/designs/{id}/experiment-recipes` | 按组分填写的自有配方 CSV 与所选目标列 | 实验行数、配方数、已在池/新增/越界/重复合并数、候选池新规模 |
 | `POST /api/v1/designs/{id}/optimization-runs` | `mode=single/multi`、目标及方向、批量数、模型参数 | `run_id`、异步任务状态 |
 | `GET /api/v1/optimization-runs/{run_id}` | 无 | 当前轮次、训练/预测/推荐状态、产物链接 |
 | `GET /api/v1/optimization-runs/{run_id}/recommendations/{round}` | 轮次 | 配方表预览、目标列、CSV 下载链接 |
@@ -146,7 +148,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 - 实验结果必须按下载模板的完整配方列上传；CSV 校验能报告池外 ID、重复样本、配方字段不一致、空值和非法性能值。
 - 单目标、双目标分别调用正确脚本；至少两条完整实测数据时，能生成本轮预测和 `recommendation_1.csv`，推荐行来自候选池且性能列为空。
 - 不同设计及不同优化运行的文件互不覆盖；任务失败可在界面查看明确原因。
-- 多锂盐、添加剂配置、目标单位换算、真实实验回填后的多轮 UI 控制均作为后续扩展；首版先完成“创建空间 → 转换候选池 → 按模板上传初始实验 → 产生推荐”。
+- 多锂盐、目标单位换算、真实实验回填后的多轮 UI 控制均作为后续扩展；首版先完成“创建空间 → 转换候选池 → 按模板上传初始实验 → 产生推荐”。
 
 ## 9. 现有实现依据
 
