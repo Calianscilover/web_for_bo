@@ -46,7 +46,7 @@
           <p class="hint additive-empty" id="additive-empty">未添加添加剂，候选池仅包含锂盐与溶剂。</p>
           <details><summary>采样与称量设置</summary><div class="field-row"><label>批次质量 <small>g</small><input id="batch-mass" type="number" step="0.1" value="5"></label><label>称量步长 <small>g</small><input id="mass-step" type="number" step="0.0001" value="0.0001"></label></div><div class="field-row"><label>采样指数 <small>2ⁿ 个点</small><input id="candidate-power" type="number" min="3" max="14" value="10"></label><label>随机种子<input id="seed" type="number" value="2026"></label></div></details>
           <div class="actions"><button id="generate" class="primary">生成候选池 <span>↗</span></button><button id="demo" class="secondary">载入七元示例</button></div>
-          <div class="field-row last-row"><label>当前设计<select id="design-select"><option value="">尚未选择</option></select></label><div class="micro-status" id="design-status">等待创建</div></div>
+          <div class="field-row last-row"><label>当前设计<select id="design-select" autocomplete="off"><option value="">本次尚未创建设计</option></select></label><div class="micro-status" id="design-status">等待创建</div></div>
         </div>
       </article>
       <article class="card fill-card" id="pool">
