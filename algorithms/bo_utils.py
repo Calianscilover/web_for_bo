@@ -23,6 +23,9 @@ from botorch.sampling.normal import SobolQMCNormalSampler
 from gpytorch.kernels import MaternKernel, RBFKernel, ScaleKernel
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
+# Exact hypervolume box decompositions stay tractable up to four objectives.
+MAX_OBJECTIVES = 4
+
 
 @dataclass
 class ExperimentData:
@@ -59,9 +62,12 @@ def load_experiment_data(experiment_path, pool_path, *, label,
         raise ValueError("label must be 'single' or 'multi'")
     targets = list(target_names or (["Conductivity"] if label == "single"
                                     else ["logCE", "Conductivity"]))
-    expected = 1 if label == "single" else 2
-    if len(targets) != expected or len(set(targets)) != expected:
-        raise ValueError(f"{label} requires {expected} distinct target column(s)")
+    if len(set(targets)) != len(targets):
+        raise ValueError("Target columns must be distinct")
+    if label == "single" and len(targets) != 1:
+        raise ValueError("single requires exactly one target column")
+    if label == "multi" and not 2 <= len(targets) <= MAX_OBJECTIVES:
+        raise ValueError(f"multi requires 2 to {MAX_OBJECTIVES} target columns")
     experiment_fields, experiments = _read_table(experiment_path)
     pool_fields, pool = _read_table(pool_path)
     if "sample_id" not in experiment_fields or "sample_id" not in pool_fields:
@@ -285,7 +291,7 @@ def recommendation(data, model, args):
     )
     return _selected_indices(selected, data)
 
-#根据初始已测双目标值生成超体积参考点，兼容最大化和最小化方向。
+#根据初始已测多目标值生成超体积参考点，兼容最大化和最小化方向。
 def initial_reference(values, directions):
     signs = np.array([-1 if direction == "min" else 1 for direction in directions])
     signed = np.asarray(values) * signs
@@ -293,7 +299,7 @@ def initial_reference(values, directions):
     scale = np.where(span > 0, span, np.maximum(np.abs(signed).max(0), 1.0))
     return (signed.min(0) - 0.1 * scale) * signs
 
-#用 qLogNEHVI 和参考点进行双目标离散批量选点。
+#用 qLogNEHVI 和参考点进行多目标（2–4 个）离散批量选点。
 def multi_recommendation(data, model, args, ref_point):
     if not data.candidate_indices:
         return []
@@ -491,7 +497,7 @@ def save_csv(path, fields, rows):
 
 
 def fit_multi_model_data(train_X, train_Y, args):
-    """Fit independent GPs for two measured objectives."""
+    """Fit one independent GP per measured objective."""
     models = []
     for j in range(train_Y.shape[-1]):
         objective_args = copy(args)

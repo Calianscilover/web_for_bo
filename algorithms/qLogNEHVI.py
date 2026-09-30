@@ -1,4 +1,4 @@
-"""Fit two independent GPs from measured electrolyte experiments."""
+"""Fit one GP per objective (2–4 objectives) from measured electrolyte experiments."""
 from __future__ import annotations
 
 import argparse
@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from bo_utils import (existing_recommendation_path, fit_multi_model_data,
+from bo_utils import (MAX_OBJECTIVES, existing_recommendation_path, fit_multi_model_data,
                       initial_reference, load_experiment_data,
                       multi_recommendation, predict_candidates, recommendation_path,
                       record_training, save_candidate_predictions, save_recommendations,
@@ -23,27 +23,37 @@ def parse_args():
                         default=ROOT / "pool/converted/experiment.csv")
     parser.add_argument("--pool", type=Path,
                         default=ROOT / "pool/converted/pool_catalog.csv")
-    parser.add_argument("--targets", nargs=2, default=["logCE", "Conductivity"])
+    parser.add_argument("--targets", nargs="+", default=["logCE", "Conductivity"],
+                        help=f"2 to {MAX_OBJECTIVES} objective columns")
     parser.add_argument("--feature-columns", nargs="+", default=None,
                         help="Explicit numeric input columns in both CSVs")
     parser.add_argument("--feature-basis", choices=["mass", "mole"], default="mass",
                         help="Select *_ratio_N columns when --feature-columns is omitted")
     parser.add_argument("--output", type=Path, default=ROOT / "outputs/multi_training")
-    parser.add_argument("--directions", nargs=2, choices=["max", "min"],
-                        default=["max", "max"])
+    parser.add_argument("--directions", nargs="+", choices=["max", "min"], default=None,
+                        help="One per target; defaults to max for every target")
     parser.add_argument("--kernel", choices=["default", "rbf", "matern"], default="default")
     parser.add_argument("--matern-nu", type=float, choices=[0.5, 1.5, 2.5], default=2.5)
     parser.add_argument("--ard", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--lengthscale-init", type=float, default=0.5)
-    parser.add_argument("--noise-std", nargs=2, type=float, default=None)
+    parser.add_argument("--noise-std", nargs="+", type=float, default=None)
     parser.add_argument("--fit-maxiter", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=3)
     parser.add_argument("--mc-samples", type=int, default=256)
     parser.add_argument("--pool-batch-size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--ref-point", nargs=2, type=float, default=None,
+    parser.add_argument("--ref-point", nargs="+", type=float, default=None,
                         help="Reference values in original objective units")
     args = parser.parse_args()
+    count = len(args.targets)
+    if not 2 <= count <= MAX_OBJECTIVES or len(set(args.targets)) != count:
+        parser.error(f"targets must be 2 to {MAX_OBJECTIVES} distinct columns")
+    if args.directions is None:
+        args.directions = ["max"] * count
+    for name in ("directions", "noise_std", "ref_point"):
+        value = getattr(args, name)
+        if value is not None and len(value) != count:
+            parser.error(f"{name.replace('_', '-')} needs one value per target ({count})")
     if not np.isfinite(args.lengthscale_init) or args.lengthscale_init <= 0:
         parser.error("lengthscale-init must be finite and positive")
     if args.fit_maxiter <= 0:
