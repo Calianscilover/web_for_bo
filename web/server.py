@@ -142,7 +142,7 @@ def run_info(directory):
             _, rows = table(rec_path)
             missing = sum(not row[name].strip() for row in rows for name in state["targets"])
             state["feedback"] = {"status": "complete" if missing == 0 else "pending",
-                                 "missing_values": missing,
+                                 "missing_values": missing, "rows": len(rows),
                                  "source": state.get("feedback_sources", {}).get(str(round_id))}
     return state
 
