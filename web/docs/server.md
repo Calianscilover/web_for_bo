@@ -20,6 +20,8 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 推荐/可视化/文件 | `GET /api/v1/optimization-runs/{id}/recommendations/{round}`、`visualization`、`files/{name}` |
 | 实测/模拟回传与下一轮 | `POST /api/v1/optimization-runs/{id}/feedback`、`simulate`、`next-round` |
 
+校验错误统一返回 400 和 `{code, message}`；异常带 `details` 属性时（如实验 CSV 的 `RecipeError`）一并返回 `details` 列表，页面逐条显示。实验导入、目标列名和启动优化前的检查使用中文提示。
+
 ## 修改位置
 
 新增业务动作改四步模块的 `actions.py`；增加接口或改变响应字段改本文件并同步 `static/app.js`。新增可下载产物需要更新 `DESIGN_FILES` 或 `RUN_FILE`。改变状态结构时同时考虑已有运行目录的 `status.json` 向后兼容。

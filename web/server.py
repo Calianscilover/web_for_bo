@@ -96,11 +96,11 @@ def send_csv_file(path):
 def target_names(raw, mode=None):
     names = raw if isinstance(raw, list) else []
     if len(names) != len(set(names)) or any(not isinstance(x, str) or not TARGET.fullmatch(x) for x in names):
-        raise ValueError("Target columns must be distinct simple column names")
+        raise ValueError("目标列名只能用英文字母开头，由字母、数字或下划线组成，且两个目标不能重名")
     if mode and len(names) != (1 if mode == "single" else 2):
-        raise ValueError("Select one target for single mode or two for multi mode")
+        raise ValueError("单目标请填写 1 个目标列，双目标请填写 2 个")
     if not 1 <= len(names) <= 2:
-        raise ValueError("Select one or two targets")
+        raise ValueError("请填写 1 到 2 个目标列名")
     return names
 
 
@@ -157,7 +157,10 @@ def error_response(exc):
         status = 400
     else:
         status = 500
-    return jsonify({"code": type(exc).__name__, "message": str(exc)}), status
+    body = {"code": type(exc).__name__, "message": str(exc)}
+    if getattr(exc, "details", None):
+        body["details"] = exc.details
+    return jsonify(body), status
 
 
 @app.get("/")
@@ -272,9 +275,9 @@ def upload_recipes(design_id):
     names = target_names(payload.get("targets"))
     state = read_json(directory / "status.json")
     if state.get("status") != "succeeded":
-        raise ValueError("The candidate pool is not ready")
+        raise ValueError("候选池尚未生成完成，请稍候再上传")
     if any((OUTPUT / "runs").glob(f"*/design_{design_id}")):
-        raise ValueError("A run already uses this experiment; create a new design to replace it")
+        raise ValueError("该设计已有优化运行，实验数据已锁定；请新建设计或重新载入示例后再导入")
     summary = import_recipes(directory, payload.get("csv"), names)
     state.setdefault("counts", {})["feasible"] = summary["pool_size"]
     save_json(directory / "status.json", state)
@@ -296,7 +299,7 @@ def sync_feedback(run_dir, state):
 def create_run(design_id):
     directory = path_for("designs", design_id)
     if not (directory / "experiment.csv").exists():
-        raise ValueError("Upload experiment CSV first")
+        raise ValueError("请先在「实验数据」上传实验 CSV")
     payload = request.get_json(force=True)
     mode = payload.get("mode")
     if mode not in ("single", "multi"):
@@ -304,10 +307,10 @@ def create_run(design_id):
     names = target_names(payload.get("targets"), mode)
     experiment_fields, experiments = table(directory / "experiment.csv")
     if any(x not in experiment_fields for x in names):
-        raise ValueError("Selected targets are not present in uploaded experiment CSV")
+        raise ValueError("所选目标列不在已上传的实验数据中；请检查目标列名，或按当前目标重新上传实验 CSV")
     complete = sum(all(row[name].strip() for name in names) for row in experiments)
     if complete < 2:
-        raise ValueError("At least two complete experimental rows are needed")
+        raise ValueError("至少需要 2 条目标值完整的实验才能开始优化")
     directions = payload.get("directions", ["max"] * len(names))
     if len(directions) != len(names) or any(x not in ("max", "min") for x in directions):
         raise ValueError("Directions must be max or min for each target")

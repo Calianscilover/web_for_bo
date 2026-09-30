@@ -141,7 +141,8 @@ class LocalFlow(unittest.TestCase):
         untouched = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                      json={"targets": ["Conductivity"], "csv": template_text})
         self.assertEqual(untouched.status_code, 400)
-        self.assertIn("EXAMPLE", untouched.get_json()["message"])
+        self.assertEqual(untouched.get_json()["message"], "没有可导入的实验数据")
+        self.assertIn("2 行 EXAMPLE", untouched.get_json()["details"][0])
         _, pool = server.table(directory / "pool.csv")
         existing = [pool[0][f"{name}_mass_g"] for name in ("LiDFOB", "NDFA", "TTE", "VC")]
         recipes = "\n".join([
@@ -157,7 +158,20 @@ class LocalFlow(unittest.TestCase):
                                    json={"targets": ["Conductivity"],
                                          "csv": "experiment_id,LiDFOB_mass_g,FEC_mass_g,Conductivity\nX,1,1,1\n"})
         self.assertEqual(unknown.status_code, 400)
-        self.assertIn("FEC_mass_g", unknown.get_json()["message"])
+        self.assertIn("FEC_mass_g", unknown.get_json()["details"][0])
+        self.assertIn("LiDFOB, NDFA, TTE, VC", unknown.get_json()["details"][1])
+        invalid = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes", json={
+            "targets": ["Conductivity"],
+            "csv": "experiment_id,LiDFOB_mass_g,NDFA_mass_g,TTE_mass_g,VC_mass_g,Conductivity\n"
+                   "A,1,abc,1,0,3\nB,1,-2,1,0,3\nC,,,,,3\nD,1,1,1,0,3,9\nE,1,1,1,0,3\n"}).get_json()
+        self.assertEqual(invalid["message"], "有 4 处数据不符合规范，本次未导入任何数据")
+        self.assertEqual([detail.split("：")[0] for detail in invalid["details"][:4]],
+                         ["第 2 行 NDFA_mass_g", "第 3 行 NDFA_mass_g", "第 4 行", "第 5 行"])
+        self.assertFalse((directory / "experiment.csv").exists())
+        no_target = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes", json={
+            "targets": ["logCE"], "csv": recipes}).get_json()
+        self.assertEqual(no_target["message"], "缺少目标列：logCE")
+        self.assertIn("Conductivity", no_target["details"][1])
         imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                     json={"targets": ["Conductivity"], "csv": recipes})
         self.assertEqual(imported.status_code, 200, imported.get_json())
@@ -226,7 +240,7 @@ class LocalFlow(unittest.TestCase):
         foreign = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                    json={"targets": ["Conductivity"], "csv": seven})
         self.assertEqual(foreign.status_code, 400)
-        self.assertIn("FEC", foreign.get_json()["message"])
+        self.assertIn("FEC", foreign.get_json()["details"][0])
 
     def test_multi_objective_recommendation(self):
         response = self.client.post("/api/v1/designs", json=CONFIG)
