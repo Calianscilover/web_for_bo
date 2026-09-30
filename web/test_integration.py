@@ -118,6 +118,13 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual(third_visual["counts"]["simulated_feedback"], 2)
         self.assertEqual(third_visual["counts"]["real_feedback"], 2)
         self.assertEqual(len(third_visual["progress"]), 3)
+        self.assertEqual(self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate",
+                                          json={}).status_code, 200)
+        simulated = [record["values"] for record in self.client.get(
+            f"/api/v1/optimization-runs/{run_id}/visualization").get_json()["measurements"]
+            if record["source"] == "simulated"]
+        self.assertEqual(len(simulated), 4)
+        self.assertNotEqual(sorted(simulated[:2]), sorted(simulated[2:]))
 
     def test_additive_pool_and_recipe_import(self):
         config = dict(CONFIG, additives=[{"name": "VC", "smiles": "O=C1OC=CO1",
@@ -292,6 +299,13 @@ class LocalFlow(unittest.TestCase):
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
         self.assertEqual(info["round"], 2)
         self.assertGreaterEqual(len(self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()["pareto"]), 1)
+        self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate", json={})
+        visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
+        points = {record["sample_id"]: record["values"] for record in visual["measurements"]}
+        self.assertEqual(len(points), 9)
+        front = {sample_id for sample_id, (x, y) in points.items()
+                 if not any(a >= x and b >= y and (a, b) != (x, y) for a, b in points.values())}
+        self.assertEqual({record["sample_id"] for record in visual["pareto"]}, front)
 
 
 if __name__ == "__main__":
