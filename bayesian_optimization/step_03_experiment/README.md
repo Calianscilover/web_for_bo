@@ -6,7 +6,7 @@
 
 ## 自有配方（不在候选池）
 
-`recipe_template` / `import_recipes` 包装 `pool/import_experiments.py`。配方 CSV 为 `experiment_id`、每个设计组分一列 `<名称>_mass_g`（或 `<名称>_mass_fraction`，二选一，未用组分留空）和目标列。脚本按 10 位小数的质量分数与 `pool.csv` 比对：相同配方沿用原行；新配方追加到 `pool.csv` 末尾，再用原转换设置重跑 `convert_pool`。`sample_id` 与 `chem_group_id` 都是组成的确定性哈希，因此新旧候选编号规则完全一致，原有行编号不变。重复配方的目标值取平均；超出设计范围的配方保留并在 `experiment_mapping.csv` 的 `within_design_bounds` 标记。含设计外组分的列直接报错，需要先在配方空间加入该组分并重新生成。命令行用法：
+`recipe_template` / `import_recipes` 包装 `pool/import_experiments.py`。配方 CSV 为 `experiment_id`、每个设计组分一列 `<名称>_mass_g`（或 `<名称>_mass_fraction`，二选一，未用组分留空）和目标列。脚本按 10 位小数的质量分数与 `pool.csv` 比对：相同配方沿用原行；新配方追加到 `pool.csv` 末尾，再用原转换设置重跑 `convert_pool`。`sample_id` 与 `chem_group_id` 都是组成的确定性哈希，因此新旧候选编号规则完全一致，原有行编号不变。重复配方的目标值取平均；超出设计范围的配方保留并在 `experiment_mapping.csv` 的 `within_design_bounds` 标记。含设计外组分的列直接报错，需要先在配方空间加入该组分并重新生成。下载的模板带两行 `EXAMPLE-01/02` 填写示例（一行取自候选池、一行为按 0.01 g 称量的池外配方，未用组分留空），导入时以 `EXAMPLE` 开头的行和全空行会被跳过，所以实验人员可以直接在示例下方追加。命令行用法：
 
 ```bash
 python pool/import_experiments.py --design-dir bo_test/designs/<id> --targets Conductivity --template recipe_template.csv

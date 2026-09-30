@@ -8,7 +8,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from pool.import_experiments import import_recipes as merge_recipes, template_fields
+from pool.import_experiments import import_recipes as merge_recipes, template as recipe_template_rows
 
 
 def read_table(path: Path):
@@ -71,8 +71,8 @@ def validate_upload(csv_text, catalog_path, names, expected_ids=None):
 
 
 def recipe_template(design_dir: Path, names):
-    """Columns of the recipe CSV: experiment_id, <component>_mass_g..., targets."""
-    return template_fields(design_dir, names)
+    """Recipe CSV columns (experiment_id, <component>_mass_g..., targets) and EXAMPLE rows."""
+    return recipe_template_rows(design_dir, names)
 
 
 def import_recipes(design_dir: Path, csv_text, names):
