@@ -36,6 +36,8 @@
 .pareto-detail{margin-top:14px;border:1px solid #e8edf3;border-radius:10px;padding:12px 16px}
 .pareto-detail summary{margin:0;font-weight:700;color:#61758d}
 .pareto-chart{max-width:620px;margin:auto}
+.pareto-axes{display:flex;justify-content:center;gap:16px;margin:10px 0 4px;font-size:11px;color:#61758d}
+.pareto-axes select{margin-left:6px;font-size:11px;border:1px solid #dfe5ed;background:#fff;padding:4px 6px;border-radius:6px;color:#425775;max-width:160px}
 .viz-bottom{display:grid;grid-template-columns:.75fr 1.25fr;gap:22px;border-top:1px solid #edf0f4;margin-top:19px;padding-top:20px}
 .prediction-list{display:flex;flex-direction:column;gap:8px;margin-top:11px}
 .prediction-item{border:1px solid #e8edf3;border-radius:8px;padding:9px 11px;font-size:11px;color:#667587;line-height:1.7}

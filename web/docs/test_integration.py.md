@@ -1,6 +1,6 @@
 # `web/test_integration.py`：流程验证
 
-Flask `test_client` 与临时输出目录覆盖新设计撒点、候选转换、实验 CSV 上传、单目标/双目标首轮推荐、真实/模拟实验回传、第二轮及第三轮结果、可视化和双目标超体积。运行：
+Flask `test_client` 与临时输出目录覆盖新设计撒点、候选转换、实验 CSV 上传、单目标/双目标/三目标首轮推荐（含目标数量与参考点长度校验）、真实/模拟实验回传、第二轮及第三轮结果、可视化和多目标超体积。运行：
 
 ```bash
 python web/test_integration.py

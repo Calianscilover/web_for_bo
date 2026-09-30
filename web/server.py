@@ -35,6 +35,7 @@ executor = ThreadPoolExecutor(max_workers=2)
 OUTPUT = ROOT / "bo_test"
 ID = re.compile(r"^[a-f0-9]{12}$")
 TARGET = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+MAX_OBJECTIVES = 4
 CATALOG = ROOT / "pool" / "converted" / "pool_catalog.csv"
 EXPERIMENT = ROOT / "pool" / "converted" / "experiment.csv"
 DESIGN_FILES = {"config_snapshot.json", "components.csv", "feasible_candidates.csv",
@@ -97,11 +98,13 @@ def send_csv_file(path):
 def target_names(raw, mode=None):
     names = raw if isinstance(raw, list) else []
     if len(names) != len(set(names)) or any(not isinstance(x, str) or not TARGET.fullmatch(x) for x in names):
-        raise ValueError("目标列名只能用英文字母开头，由字母、数字或下划线组成，且两个目标不能重名")
-    if mode and len(names) != (1 if mode == "single" else 2):
-        raise ValueError("单目标请填写 1 个目标列，双目标请填写 2 个")
-    if not 1 <= len(names) <= 2:
-        raise ValueError("请填写 1 到 2 个目标列名")
+        raise ValueError("目标列名只能用英文字母开头，由字母、数字或下划线组成，且各目标不能重名")
+    if mode == "single" and len(names) != 1:
+        raise ValueError("单目标请填写 1 个目标列")
+    if mode == "multi" and not 2 <= len(names) <= MAX_OBJECTIVES:
+        raise ValueError(f"多目标请填写 2 到 {MAX_OBJECTIVES} 个目标列")
+    if not 1 <= len(names) <= MAX_OBJECTIVES:
+        raise ValueError(f"请填写 1 到 {MAX_OBJECTIVES} 个目标列名")
     return names
 
 

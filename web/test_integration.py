@@ -329,6 +329,49 @@ class LocalFlow(unittest.TestCase):
                  if not any(a >= x and b >= y and (a, b) != (x, y) for a, b in points.values())}
         self.assertEqual({record["sample_id"] for record in visual["pareto"]}, front)
 
+    def test_three_objective_recommendation(self):
+        design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        fields, rows = server.table(server.OUTPUT / "designs" / design_id /
+                                    "converted" / "pool_catalog.csv")
+        targets = ["Conductivity", "LCE", "Viscosity"]
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=fields + targets)
+        writer.writeheader()
+        for i, row in enumerate(rows[:5]):
+            writer.writerow(dict(row, Conductivity=str(3 + i / 3), LCE=str(60 - i * 2),
+                                 Viscosity=str(4 + (i * 3) % 5)))
+        upload = self.client.post(f"/api/v1/designs/{design_id}/observations",
+                                  json={"targets": targets, "csv": stream.getvalue()})
+        self.assertEqual(upload.status_code, 200, upload.get_json())
+        base = {"mode": "multi", "targets": targets, "directions": ["max", "max", "min"],
+                "batch_size": 2, "mc_samples": 16, "fit_maxiter": 10}
+        for invalid, message in (({"targets": targets + ["A", "B"],
+                                   "directions": ["max"] * 5}, "2 到 4 个目标列"),
+                                 ({"mode": "single"}, "单目标请填写 1 个"),
+                                 ({"directions": ["max", "max"]}, "优化方向"),
+                                 ({"ref_point": ["1", "2"]}, "超体积参考点需为每个目标")):
+            rejected = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                                        json={**base, **invalid})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertIn(message, rejected.get_json()["message"])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={**base, "ref_point": ["2", "50", "10"]})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        run_id = run.get_json()["run_id"]
+        info = self.wait(f"/api/v1/optimization-runs/{run_id}")
+        self.assertEqual(info["round"], 1)
+        self.assertEqual(info["summary"]["ref_point"], [2.0, 50.0, 10.0])
+        self.assertEqual(info["summary"]["directions"], ["max", "max", "min"])
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertTrue(all(row[name] == "" for row in rec["rows"] for name in targets))
+        self.assertEqual(self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate",
+                                          json={}).status_code, 200)
+        visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
+        self.assertEqual((visual["mode"], visual["targets"]), ("multi", targets))
+        self.assertEqual(len(visual["progress"]), 2)
+        self.assertGreaterEqual(len(visual["pareto"]), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
