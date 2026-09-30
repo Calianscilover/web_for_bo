@@ -38,7 +38,7 @@ python algorithms/qLogNEHVI.py
 
 若推荐文件仍有待回填目标值，重复运行入口会暂停。填完 `recommendation_1.csv` 的目标列后，用相同命令再次运行，即生成 `recommendation_2.csv`、`candidate_predictions_2.csv`；后续依次编号。完整候选池耗尽时停止推荐。请保持实验与候选池文件、目标设置及输出目录一致。已有的 `recommendations.csv`、`recommendations_2.csv` 等旧文件仍可继续回流。
 
-模拟回传可用单独脚本。它只填本轮推荐文件中尚未获得的目标值，随机值从相应目标的已有实测范围中抽取；若该配方某目标早已实测，则保留原实测值。
+模拟回传可用单独脚本。它只填本轮推荐文件中尚未获得的目标值，随机值从相应目标的已有实测范围中抽取，随机数由 `--seed` 与配方 `sample_id` 共同决定：不同配方得到不同的值，同一配方重复模拟结果不变（各轮不会重复同一组数值）；若该配方某目标早已实测，则保留原实测值。
 
 ```bash
 python algorithms/simu_experiment.py --output outputs/single_training --seed 2026

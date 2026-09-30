@@ -10,66 +10,109 @@
 <body>
   <header class="topbar">
     <div class="brand"><img src="/static/logo.jpg" alt="DPTechnology 深势科技"><span class="brand-divider"></span><span>电解液优化工作台</span></div>
-    <nav><a href="#space">配方空间</a><a href="#pool">候选池</a><a href="#experiment">实验数据</a><a href="#optimization">模型优化</a></nav>
     <span class="local-pill"><span class="online-dot"></span> 本地运行</span>
   </header>
+  <div class="shell">
+  <aside class="side-nav" aria-label="流程导航">
+    <div class="side-title">工作流程</div>
+    <nav class="side-steps" id="progress">
+      <a href="#space" data-step="1"><span class="dot">01</span><span class="label"><b>配方空间</b><small>未开始</small></span></a>
+      <a href="#pool" data-step="2"><span class="dot">02</span><span class="label"><b>候选池</b><small>未开始</small></span></a>
+      <a href="#experiment" data-step="3"><span class="dot">03</span><span class="label"><b>实验数据</b><small>未开始</small></span></a>
+      <a href="#optimization" data-step="4"><span class="dot">04</span><span class="label"><b>模型优化</b><small>未开始</small></span></a>
+      <a href="#recommendations" data-step="5"><span class="dot">05</span><span class="label"><b>推荐回传</b><small>未开始</small></span></a>
+      <a href="#visualization" data-step="6"><span class="dot">06</span><span class="label"><b>可视化</b><small>未开始</small></span></a>
+    </nav>
+  </aside>
   <main>
     <section class="hero">
-      <div><div class="eyebrow">FORMULATION DESIGN · BAYESIAN OPTIMIZATION</div><h1>从配方空间到实验推荐</h1><p>配置原料、生成候选池、导入实测结果，在本地完成一轮单目标或双目标贝叶斯优化。</p></div>
-      <div class="hero-mark"><span>01</span><i></i><span>02</span><i></i><span>03</span><i></i><span>04</span></div>
+      <div><div class="eyebrow">FORMULATION DESIGN · BAYESIAN OPTIMIZATION</div><h1>电解液配方优化</h1><p>配置原料、生成候选池、导入实测结果，在本地完成一轮单目标或双目标贝叶斯优化。</p></div>
     </section>
     <div id="notice" class="notice" role="status" hidden></div>
     <section class="grid">
       <article class="card" id="space">
-        <div class="card-head"><div class="step">01</div><div><h2>配方空间</h2><p>定义一个锂盐与溶剂范围</p></div></div>
+        <div class="card-head"><div class="step" data-step="1">01</div><div><h2>配方空间</h2><p>定义锂盐、溶剂与添加剂范围</p></div></div>
         <div class="section-content">
           <div class="field-row"><label>设计名称<input id="design-name" value="电解液设计 · 25°C"></label><label>温度 <small>°C，仅记录</small><input id="temperature" type="number" value="25"></label></div>
-          <div class="subhead">锂盐</div>
-          <div class="field-row"><label>名称<input id="salt-name" value="LiDFOB"></label><label>SMILES<input id="salt-smiles" value="F[B-]1(OC(C(O1)=O)=O)F.[Li+]"></label></div>
-          <div class="field-row"><label>总质量分数下限 <small>0–1</small><input id="salt-low" type="number" step="0.01" value="0.10"></label><label>总质量分数上限 <small>0–1</small><input id="salt-high" type="number" step="0.01" value="0.30"></label></div>
-          <div class="subhead with-action">溶剂 <button class="text-button" id="add-solvent">＋ 添加溶剂</button></div>
-          <p class="hint">下列比例以溶剂池为分母，所有溶剂比例之和等于 1。</p>
+          <div class="subhead">锂盐 <small>范围以电解液总质量为分母</small></div>
+          <div class="component-head"><span>名称</span><span>SMILES</span><span>质量分数下限</span><span>质量分数上限</span></div>
+          <div class="component-row salt-row"><input id="salt-name" value="LiDFOB" aria-label="锂盐名称"><input id="salt-smiles" value="F[B-]1(OC(C(O1)=O)=O)F.[Li+]" aria-label="锂盐 SMILES"><input id="salt-low" type="number" min="0" max="1" step="0.01" value="0.10" aria-label="锂盐质量分数下限"><input id="salt-high" type="number" min="0" max="1" step="0.01" value="0.30" aria-label="锂盐质量分数上限"></div>
+          <div class="subhead with-action"><span>溶剂 <small>范围以溶剂池（扣除锂盐与添加剂）为分母，比例之和等于 1</small></span><button class="text-button" id="add-solvent">＋ 添加溶剂</button></div>
+          <div class="component-head solvent-head"><span>名称</span><span>SMILES</span><span>池分数下限</span><span>池分数上限</span><span>基准</span><span></span></div>
           <div id="solvents"></div>
+          <div class="subhead with-action"><span>添加剂 <small>可选；范围以电解液总质量为分母</small></span><button class="text-button" id="add-additive">＋ 添加添加剂</button></div>
+          <div class="component-head additive-head" id="additive-head" hidden><span>名称</span><span>SMILES</span><span>类型</span><span>质量分数下限</span><span>质量分数上限</span><span></span></div>
+          <div id="additives"></div>
+          <p class="hint additive-empty" id="additive-empty">未添加添加剂，候选池仅包含锂盐与溶剂。</p>
           <details><summary>采样与称量设置</summary><div class="field-row"><label>批次质量 <small>g</small><input id="batch-mass" type="number" step="0.1" value="5"></label><label>称量步长 <small>g</small><input id="mass-step" type="number" step="0.0001" value="0.0001"></label></div><div class="field-row"><label>采样指数 <small>2ⁿ 个点</small><input id="candidate-power" type="number" min="3" max="14" value="10"></label><label>随机种子<input id="seed" type="number" value="2026"></label></div></details>
           <div class="actions"><button id="generate" class="primary">生成候选池 <span>↗</span></button><button id="demo" class="secondary">载入七元示例</button></div>
-          <div class="field-row last-row"><label>当前设计<select id="design-select"><option value="">尚未选择</option></select></label><div class="micro-status" id="design-status">等待创建</div></div>
+          <div class="field-row last-row"><label>当前设计<select id="design-select" autocomplete="off"><option value="">本次尚未创建设计</option></select></label><div class="micro-status" id="design-status">等待创建</div></div>
         </div>
       </article>
-      <article class="card" id="pool">
-        <div class="card-head"><div class="step">02</div><div><h2>候选池</h2><p>检查生成结果与原始配方</p></div></div>
+      <article class="card fill-card" id="pool">
+        <div class="card-head"><div class="step" data-step="2">02</div><div><h2>候选池</h2><p>检查生成结果与配方组成</p></div></div>
         <div class="section-content">
           <div class="stat-row"><div><strong id="pool-count">—</strong><span>候选配方</span></div><div><strong id="pool-components">—</strong><span>组分数量</span></div><div><strong id="pool-page">—</strong><span>当前页</span></div></div>
-          <div class="toolbar"><span id="pool-caption">生成或载入设计后预览候选池</span><a id="catalog-link" class="download disabled" href="#">下载 pool_catalog.csv ↗</a></div>
+          <div class="toolbar"><span id="pool-caption">生成或载入设计后预览候选池 · 组成为质量分数</span><a id="catalog-link" class="download disabled" href="#">下载 pool_catalog.csv ↗</a></div>
           <div class="table-wrap"><table id="pool-table"><thead></thead><tbody><tr><td class="empty-cell">暂无候选配方</td></tr></tbody></table></div>
           <div class="pager"><button id="prev-page" class="secondary small">← 上一页</button><button id="next-page" class="secondary small">下一页 →</button></div>
         </div>
       </article>
       <article class="card" id="experiment">
-        <div class="card-head"><div class="step">03</div><div><h2>实验数据</h2><p>按候选池完整配方列上传已有结果</p></div></div>
+        <div class="card-head"><div class="step" data-step="3">03</div><div><h2>实验数据与优化目标</h2><p>先确定目标列，再按模板上传已有结果</p></div></div>
         <div class="section-content">
-          <div class="callout"><strong>上传格式</strong><span>下载模板，仅保留已实验的配方行，填写目标性能列；请保留全部原始配方字段和列顺序。</span></div>
-          <div class="field-row"><label>目标 1 列名<input id="target-1" value="Conductivity"></label><label>目标 2 列名 <small>双目标时启用</small><input id="target-2" value="logCE"></label></div>
-          <div class="actions"><button id="template" class="secondary">下载实验模板 ↓</button><label class="upload-button">选择实验 CSV <input id="experiment-file" type="file" accept=".csv,text/csv"></label></div>
+          <div class="segmented"><button data-mode="single" class="selected">单目标 qLogNEI</button><button data-mode="multi">双目标 qLogNEHVI</button></div>
+          <div class="field-row target-row"><label>目标 1 列名<input id="target-1" value="Conductivity"></label><label>优化方向<select id="direction-1"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
+          <div class="field-row target-row" id="target-2-row" hidden><label>目标 2 列名<input id="target-2" value="logCE"></label><label>优化方向<select id="direction-2"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
+          <p class="hint">目标列名必须与上传文件的列名一致。LCE 与示例数据中的 logCE 不会自动互换。</p>
+          <div class="callout"><strong>上传格式（两种模板列相同，随当前候选池组分变化）</strong><span>每行一个实验：experiment_id、各组分称量质量（g，总质量不限，未使用留空）和目标值。「候选池」模板列出全部候选，只需给做过的行填写目标值；「自有配方」模板附 EXAMPLE 示例，可追加不在候选池中的配方。未填目标值的行和 EXAMPLE 行自动忽略；新配方自动加入候选池并按同一规则生成 sample_id 与 chem_group_id，重复配方取平均。</span></div>
+          <div class="actions"><button id="template" class="secondary">下载模板 · 配方来自候选池 ↓</button><button id="recipe-template" class="secondary">下载模板 · 自有配方 ↓</button></div>
+          <div class="actions upload-row"><label class="upload-button">选择实验 CSV <input id="experiment-file" type="file" accept=".csv,text/csv"></label><a id="mapping-link" class="download disabled" href="#">对齐结果 ↗</a></div>
           <div id="experiment-result" class="result-line">尚未上传。七元示例已附带实测数据，可直接启动优化。</div>
-          <p class="hint">目标列必须与上传文件一致。LCE 与示例数据中的 logCE 不会自动互换。</p>
         </div>
       </article>
       <article class="card" id="optimization">
-        <div class="card-head"><div class="step">04</div><div><h2>模型优化</h2><p>本地运行 qLogNEI 或 qLogNEHVI</p></div></div>
+        <div class="card-head"><div class="step" data-step="4">04</div><div><h2>模型优化</h2><p>本地运行 qLogNEI 或 qLogNEHVI</p></div></div>
         <div class="section-content">
-          <div class="segmented"><button data-mode="single" class="selected">单目标 qLogNEI</button><button data-mode="multi">双目标 qLogNEHVI</button></div>
-          <div class="field-row"><label>目标 1 方向<select id="direction-1"><option value="max">最大化</option><option value="min">最小化</option></select></label><label id="direction-2-wrap">目标 2 方向<select id="direction-2"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
-          <div class="field-row"><label>每轮推荐数<input id="batch-size" type="number" min="1" max="20" value="3"></label><label>采集采样数<input id="mc-samples" type="number" min="16" value="128"></label></div>
-          <details><summary>高级模型参数</summary><div class="field-row"><label>拟合最大迭代<input id="fit-maxiter" type="number" min="10" value="100"></label><label>随机种子<input id="bo-seed" type="number" value="2026"></label></div></details>
+          <div class="target-summary"><span>优化目标</span><strong id="target-summary">—</strong><a href="#experiment" class="text-button">修改</a></div>
+          <div class="field-row"><label>每轮推荐数<input id="batch-size" type="number" min="1" max="20" value="3"></label><label>采集采样数 <small>MC 样本</small><input id="mc-samples" type="number" min="16" value="128"></label></div>
+          <details id="hyperparameters" class="hyperparameters"><summary>模型超参数设置</summary>
+            <p class="hp-note">单目标调用 qLogNEI，双目标调用 qLogNEHVI（每个目标各拟合一个高斯过程）；设置在本次运行的所有轮次中保持不变。</p>
+            <h4>高斯过程核</h4>
+            <div class="field-row"><label>核函数<select id="hp-kernel"><option value="default">默认（BoTorch：RBF + ARD，维度自适应先验）</option><option value="rbf">RBF</option><option value="matern">Matérn</option></select></label><label>Matérn ν <small>仅 Matérn</small><select id="hp-matern-nu"><option value="0.5">0.5（粗糙）</option><option value="1.5">1.5</option><option value="2.5" selected>2.5（平滑）</option></select></label></div>
+            <div class="field-row"><label>初始长度尺度 <small>输入已归一化到 0–1</small><input id="hp-lengthscale" type="number" min="0.001" max="100" step="any" value="0.5"></label><label>ARD <small>自动相关性判定</small><span class="check-line"><input id="hp-ard" type="checkbox" checked>每个输入维度独立长度尺度</span></label></div>
+            <h4>噪声与拟合</h4>
+            <div class="field-row"><label><span id="hp-noise-label-0">观测噪声标准差</span> <small>留空自动</small><input id="hp-noise-0" type="number" min="0" step="any" placeholder="自动估计"></label><label id="hp-noise-field-1"><span id="hp-noise-label-1">观测噪声标准差</span> <small>留空自动</small><input id="hp-noise-1" type="number" min="0" step="any" placeholder="自动估计"></label></div>
+            <div class="field-row"><label>拟合最大迭代<input id="fit-maxiter" type="number" min="10" max="1000" value="100"></label><label>输入特征<select id="hp-feature-basis"><option value="mass">质量分数</option><option value="mole">摩尔分数</option></select></label></div>
+            <h4>采集与候选评分</h4>
+            <div class="field-row"><label>候选评分批大小 <small>每批送入采集函数的候选数</small><input id="hp-pool-batch" type="number" min="16" max="4096" value="128"></label><label>随机种子 <small>MC 采样与选点</small><input id="bo-seed" type="number" min="0" value="2026"></label></div>
+            <div id="hp-ref-group" hidden><h4>超体积参考点 <small>双目标，原始单位</small></h4>
+              <div class="field-row"><label><span id="hp-ref-label-0">目标 1 参考值</span><input id="hp-ref-0" type="number" step="any" placeholder="自动"></label><label><span id="hp-ref-label-1">目标 2 参考值</span><input id="hp-ref-1" type="number" step="any" placeholder="自动"></label></div>
+              <p class="hp-note">留空时取初始已测值中最差的一端再向外扩展 10%，之后各轮固定；参考点应比所有值得关注的配方都差，否则超体积为 0。</p></div>
+            <button type="button" class="text-button" id="hp-reset">恢复默认</button>
+          </details>
           <div class="actions"><button id="run" class="primary">开始优化 <span>↗</span></button><span class="micro-status" id="run-status">等待运行</span></div>
           <div id="run-summary" class="run-summary" hidden></div>
         </div>
       </article>
     </section>
-    <section class="card results" id="recommendations"><div class="card-head"><div class="step">05</div><div><h2>推荐配方</h2><p>性能列留空，等待实验结果回填</p></div><span class="round-pill" id="round-pill">尚无推荐</span></div><div class="section-content"><div class="toolbar"><span id="recommendation-caption">优化完成后在这里查看本轮结果</span><div class="link-actions"><a id="rec-link" class="download disabled" href="#">下载推荐 CSV ↗</a><a id="pred-link" class="download disabled" href="#">下载预测 CSV ↗</a><a id="observation-link" class="download disabled" href="#">下载累计实测 ↗</a></div></div><div class="table-wrap"><table id="rec-table"><thead></thead><tbody><tr><td class="empty-cell">暂无推荐配方</td></tr></tbody></table></div><div id="feedback-entry" class="feedback-entry" hidden><div class="feedback-entry-head"><h3>录入本轮实验结果</h3><span>所有目标值填写完整后保存</span></div><div id="feedback-inputs" class="feedback-inputs"></div><button id="submit-feedback" class="secondary">保存实验回传</button></div><div class="feedback-controls"><label class="upload-button">上传填好的推荐 CSV <input id="feedback-file" type="file" accept=".csv,text/csv"></label><button id="simulate" class="secondary">模拟实验回传</button><button id="next-round" class="primary" disabled>生成下一轮 ↗</button></div><p class="hint">可在上方直接录入，或填写下载的推荐 CSV 后上传。模拟结果会在图表中单独标记。</p></div></section>
-    <section class="card visualization" id="visualization"><div class="card-head"><div class="step">06</div><div><h2>优化过程可视化</h2><p>代理模型拟合、已测优化进展与历史实验</p></div><span class="round-pill" id="visualization-badge">等待首轮结果</span></div><div class="section-content"><div id="visualization-empty" class="viz-empty">首轮优化完成后显示图表。</div><div id="visualization-body" hidden><div class="viz-summary" id="viz-summary"></div><div class="viz-grid"><div class="viz-panel"><div class="viz-panel-title"><div><h3>代理模型拟合</h3><p>训练样本的后验均值 vs 实测值</p></div><select id="fit-target" aria-label="选择拟合目标"></select></div><div id="fit-chart" class="chart"></div><div class="chart-note" id="fit-note"></div></div><div class="viz-panel"><div class="viz-panel-title"><div><h3 id="progress-title">优化进展</h3><p id="progress-subtitle">基于已测目标值</p></div></div><div id="progress-chart" class="chart"></div><div class="chart-note" id="progress-note"></div></div></div><details id="pareto-detail" class="pareto-detail" hidden><summary>查看当前已测 Pareto 前沿</summary><div id="pareto-chart" class="chart pareto-chart"></div></details><div class="viz-bottom"><div><h3>本轮候选预测</h3><div id="rec-predictions" class="prediction-list"></div></div><div><div class="history-head"><h3>历史实验值</h3><span>最近 20 条 · 完整数据见 observation.csv</span></div><div class="table-wrap history-wrap"><table id="history-table"><thead></thead><tbody></tbody></table></div></div></div></div></div></section>
+    <section class="card results" id="recommendations">
+      <div class="card-head"><div class="step" data-step="5">05</div><div><h2>推荐配方</h2><p>性能列留空，等待实验结果回填</p></div><span class="round-pill" id="round-pill">尚无推荐</span></div>
+      <div class="section-content">
+        <div class="toolbar"><span id="recommendation-caption">优化完成后在这里查看本轮结果</span><div class="link-actions"><a id="rec-link" class="download disabled" href="#">下载推荐 CSV ↗</a><a id="pred-link" class="download disabled" href="#">下载预测 CSV ↗</a><a id="observation-link" class="download disabled" href="#">下载累计实测 ↗</a></div></div>
+        <div class="table-wrap"><table id="rec-table"><thead></thead><tbody><tr><td class="empty-cell">暂无推荐配方</td></tr></tbody></table></div>
+        <div id="feedback-entry" class="feedback-entry" hidden>
+          <div class="feedback-entry-head"><h3>录入本轮实验结果</h3><span>所有目标值填写完整后保存</span></div>
+          <div id="feedback-inputs" class="feedback-inputs"></div>
+          <div class="feedback-actions" id="feedback-actions"><button id="submit-feedback" class="primary">保存实验回传</button><label class="upload-button">或上传填好的推荐 CSV <input id="feedback-file" type="file" accept=".csv,text/csv"></label><button id="simulate" class="text-button demo-button">模拟回传 <span>仅演示</span></button></div>
+        </div>
+        <div class="next-round-bar" id="next-round-bar" hidden><span id="next-round-reason"></span><button id="next-round" class="primary" disabled>生成下一轮 ↗</button></div>
+      </div>
+    </section>
+    <section class="card visualization" id="visualization"><div class="card-head"><div class="step" data-step="6">06</div><div><h2>优化过程可视化</h2><p>代理模型拟合、已测优化进展与历史实验</p></div><span class="round-pill" id="visualization-badge">等待首轮结果</span></div><div class="section-content"><div id="visualization-empty" class="viz-empty">首轮优化完成后显示图表。</div><div id="visualization-body" hidden><div class="viz-summary" id="viz-summary"></div><div class="viz-grid"><div class="viz-panel"><div class="viz-panel-title"><div><h3>代理模型拟合</h3><p>训练样本的后验均值 vs 实测值</p></div><select id="fit-target" aria-label="选择拟合目标"></select></div><div id="fit-chart" class="chart"></div><div class="chart-note" id="fit-note"></div></div><div class="viz-panel"><div class="viz-panel-title"><div><h3 id="progress-title">优化进展</h3><p id="progress-subtitle">基于已测目标值</p></div></div><div id="progress-chart" class="chart"></div><div class="chart-note" id="progress-note"></div></div></div><details id="pareto-detail" class="pareto-detail" hidden><summary>查看当前已测 Pareto 前沿</summary><div id="pareto-chart" class="chart pareto-chart"></div><div class="chart-note" id="pareto-note"></div></details><div class="viz-bottom"><div><h3>本轮候选预测</h3><div id="rec-predictions" class="prediction-list"></div></div><div><div class="history-head"><h3>历史实验值</h3><span>最近 20 条 · 完整数据见 observation.csv</span></div><div class="table-wrap history-wrap"><table id="history-table"><thead></thead><tbody></tbody></table></div></div></div></div></div></section>
     <footer>本地运行 · 数据与模型输出保存在 <code>bo_test/</code></footer>
   </main>
+  </div>
   <script src="/static/visualization.js"></script>
   <script src="/static/app.js"></script>
 </body>

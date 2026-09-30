@@ -1,4 +1,8 @@
-"""Generate a measurable salt/solvent candidate pool for convert_pool.py."""
+"""Generate a measurable salt/solvent/additive candidate pool for convert_pool.py.
+
+Salt and additive bounds are fractions of the whole electrolyte; solvent bounds are
+fractions of the solvent pool, i.e. of the mass left after salt and additives.
+"""
 from __future__ import annotations
 
 import argparse
@@ -11,6 +15,8 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from scipy.stats import qmc
+
+ADDITIVE_ROLES = ("functional_additive", "salt_additive")
 
 
 def _bounds(value, label):
@@ -29,7 +35,13 @@ def validate(config):
         raise ValueError("At least two solvents are required")
     if sum(bool(item.get("balance")) for item in solvents) != 1:
         raise ValueError("Mark exactly one balance solvent")
-    components = [salt, *solvents]
+    additives = config.get("additives") or []
+    if not isinstance(additives, list) or len(additives) > 8:
+        raise ValueError("Additives must be a list of at most eight components")
+    if any(not isinstance(item, dict) or item.get("role", "functional_additive") not in ADDITIVE_ROLES
+           for item in additives):
+        raise ValueError(f"Additive role must be one of: {', '.join(ADDITIVE_ROLES)}")
+    components = [salt, *solvents, *additives]
     names = [str(item.get("name", "")).strip() for item in components]
     if any(not name or not name.replace("_", "").isalnum() for name in names):
         raise ValueError("Component names must contain only letters, digits or underscores")
@@ -42,10 +54,16 @@ def validate(config):
             raise ValueError(f"Invalid SMILES for {name}")
         mols.append(mol)
     salt_bounds = _bounds(salt.get("final_mass_fraction_bounds"), "Salt fraction")
+    solvent_names = names[1:1 + len(solvents)]
+    additive_names = names[1 + len(solvents):]
     bounds = [_bounds(item.get("pool_mass_fraction_bounds"), f"{name} fraction")
-              for name, item in zip(names[1:], solvents)]
+              for name, item in zip(solvent_names, solvents)]
     if sum(x[0] for x in bounds) > 1 + 1e-12 or sum(x[1] for x in bounds) < 1 - 1e-12:
         raise ValueError("Solvent bounds cannot sum to one")
+    additive_bounds = [_bounds(item.get("final_mass_fraction_bounds"), f"{name} fraction")
+                       for name, item in zip(additive_names, additives)]
+    if salt_bounds[1] + sum(x[1] for x in additive_bounds) >= 1:
+        raise ValueError("Salt and additive upper bounds must leave mass for the solvents")
     batch = float(config.get("batch_mass_g", 5))
     step = float(config.get("mass_step_g", 0.0001))
     if not (math.isfinite(batch) and math.isfinite(step) and batch > 0 and step > 0):
@@ -63,18 +81,28 @@ def validate(config):
         raise ValueError("Temperature must be finite")
     ordered = [{"name": names[0], "role": "primary_salt",
                 "smiles": Chem.MolToSmiles(mols[0]), "molecular_weight": Descriptors.MolWt(mols[0])}]
-    for item, name, mol in zip(solvents, names[1:], mols[1:]):
+    for item, name, mol in zip(solvents, solvent_names, mols[1:]):
         ordered.append({"name": name, "role": "balance_solvent" if item.get("balance") else "cosolvent",
                         "smiles": Chem.MolToSmiles(mol), "molecular_weight": Descriptors.MolWt(mol)})
-    return ordered, salt_bounds, bounds, batch, step, units, power, seed
+    for item, name, mol in zip(additives, additive_names, mols[1 + len(solvents):]):
+        ordered.append({"name": name, "role": item.get("role", "functional_additive"),
+                        "smiles": Chem.MolToSmiles(mol), "molecular_weight": Descriptors.MolWt(mol)})
+    return ordered, salt_bounds, bounds, additive_bounds, batch, step, units, power, seed
 
 
 def generate(config, output_dir):
-    components, salt_bounds, bounds, batch, step, units, power, seed = validate(config)
+    (components, salt_bounds, bounds, additive_bounds,
+     batch, step, units, power, seed) = validate(config)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    samples = qmc.Sobol(d=len(bounds), scramble=True, seed=seed).random_base2(power)
+    n_solvents = len(bounds)
+    samples = qmc.Sobol(d=n_solvents + len(additive_bounds), scramble=True,
+                        seed=seed).random_base2(power)
     salt_ratio = salt_bounds[0] + samples[:, 0] * (salt_bounds[1] - salt_bounds[0])
+    additive_ratio = np.column_stack(
+        [low + samples[:, n_solvents + k] * (high - low)
+         for k, (low, high) in enumerate(additive_bounds)]
+    ) if additive_bounds else np.zeros((len(samples), 0))
     solvent_ratio = np.zeros((len(samples), len(bounds)))
     remaining = np.ones(len(samples))
     for i in range(len(bounds) - 1):
@@ -84,7 +112,8 @@ def generate(config, output_dir):
         solvent_ratio[:, i] = lower + samples[:, i + 1] * np.maximum(0, upper - lower)
         remaining -= solvent_ratio[:, i]
     solvent_ratio[:, -1] = remaining
-    fractions = np.column_stack([salt_ratio, (1 - salt_ratio)[:, None] * solvent_ratio])
+    solvent_share = 1 - salt_ratio - additive_ratio.sum(axis=1)
+    fractions = np.column_stack([salt_ratio, solvent_share[:, None] * solvent_ratio, additive_ratio])
     raw_units = fractions * units
     integral = np.floor(raw_units).astype(int)
     remainder = units - integral.sum(axis=1)
@@ -105,10 +134,13 @@ def generate(config, output_dir):
         mass = amount / units
         if not (salt_bounds[0] - 1e-12 <= mass[0] <= salt_bounds[1] + 1e-12):
             continue
-        solvent_total = mass[1:].sum()
+        if any(not (low - 1e-12 <= value <= high + 1e-12)
+               for value, (low, high) in zip(mass[1 + n_solvents:], additive_bounds)):
+            continue
+        solvent_total = mass[1:1 + n_solvents].sum()
         if solvent_total <= 0:
             continue
-        actual_solvents = mass[1:] / solvent_total
+        actual_solvents = mass[1:1 + n_solvents] / solvent_total
         if any(not (low - 1e-12 <= value <= high + 1e-12)
                for value, (low, high) in zip(actual_solvents, bounds)):
             continue

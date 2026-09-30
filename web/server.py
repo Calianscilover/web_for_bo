@@ -5,6 +5,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import re
 import sys
 import traceback
@@ -23,8 +24,8 @@ sys.path.insert(0, str(ROOT))
 from bayesian_optimization.step_01_formulation.actions import generate_formulations  # noqa: E402
 from bayesian_optimization.step_02_pool.actions import convert_formulations, import_demo  # noqa: E402
 from bayesian_optimization.step_03_experiment.actions import (  # noqa: E402
-    simulate_feedback as simulate_experiment, synchronize_feedback,
-    validate_upload, write_table)
+    import_recipes, recipe_template, simulate_feedback as simulate_experiment,
+    synchronize_feedback, validate_upload, write_table)
 from bayesian_optimization.step_04_optimization.actions import (  # noqa: E402
     execute_round, refresh_visualization)
 
@@ -38,7 +39,7 @@ CATALOG = ROOT / "pool" / "converted" / "pool_catalog.csv"
 EXPERIMENT = ROOT / "pool" / "converted" / "experiment.csv"
 DESIGN_FILES = {"config_snapshot.json", "components.csv", "feasible_candidates.csv",
                 "pool.csv", "pool_catalog.csv", "pool_features.csv", "pool_manifest.json",
-                "experiment.csv"}
+                "experiment.csv", "experiment_mapping.csv"}
 RUN_FILE = re.compile(r"^(recommendation_[1-9]\d*|candidate_predictions(?:_[1-9]\d*)?|observation|training_summary|visualization_[1-9]\d*)\.(csv|json)$")
 run_locks = {}
 locks_lock = Lock()
@@ -96,12 +97,72 @@ def send_csv_file(path):
 def target_names(raw, mode=None):
     names = raw if isinstance(raw, list) else []
     if len(names) != len(set(names)) or any(not isinstance(x, str) or not TARGET.fullmatch(x) for x in names):
-        raise ValueError("Target columns must be distinct simple column names")
+        raise ValueError("目标列名只能用英文字母开头，由字母、数字或下划线组成，且两个目标不能重名")
     if mode and len(names) != (1 if mode == "single" else 2):
-        raise ValueError("Select one target for single mode or two for multi mode")
+        raise ValueError("单目标请填写 1 个目标列，双目标请填写 2 个")
     if not 1 <= len(names) <= 2:
-        raise ValueError("Select one or two targets")
+        raise ValueError("请填写 1 到 2 个目标列名")
     return names
+
+
+def optional_numbers(value, names, label, positive):
+    """Blank list means "let the algorithm decide"; otherwise one finite number per target."""
+    values = [str(item).strip() if item is not None else "" for item in (value or [])]
+    if not any(values):
+        return None
+    if len(values) != len(names) or not all(values):
+        raise ValueError(f"{label}需为每个目标（{'、'.join(names)}）都填写，或全部留空")
+    try:
+        numbers = [float(item) for item in values]
+    except ValueError as error:
+        raise ValueError(f"{label}必须是数字") from error
+    if not all(math.isfinite(item) and (item > 0 or not positive) for item in numbers):
+        raise ValueError(f"{label}必须是{'正' if positive else '有限'}数")
+    return numbers
+
+
+def model_settings(payload, mode, names):
+    settings = {}
+    for key, label, lower, upper, default in (
+            ("batch_size", "每轮推荐数", 1, 20, 3), ("mc_samples", "MC 采样数", 16, 2048, 128),
+            ("fit_maxiter", "拟合最大迭代", 10, 1000, 100), ("seed", "随机种子", 0, 2**31 - 1, 2026),
+            ("pool_batch_size", "候选评分批大小", 16, 4096, 128)):
+        try:
+            value = int(payload.get(key, default))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{label}必须是整数") from error
+        if not lower <= value <= upper:
+            raise ValueError(f"{label}需在 {lower}–{upper} 之间")
+        settings[key] = value
+    kernel = payload.get("kernel", "default")
+    if kernel not in ("default", "rbf", "matern"):
+        raise ValueError("核函数只能是默认、RBF 或 Matérn")
+    try:
+        matern_nu = float(payload.get("matern_nu", 2.5))
+    except (TypeError, ValueError):
+        matern_nu = None
+    if matern_nu not in (0.5, 1.5, 2.5):
+        raise ValueError("Matérn ν 只能是 0.5、1.5 或 2.5")
+    ard = payload.get("ard", True)
+    if not isinstance(ard, bool):
+        raise ValueError("ARD 必须是开或关")
+    if kernel == "default" and not ard:
+        raise ValueError("关闭 ARD 需要选择 RBF 或 Matérn 核")
+    try:
+        lengthscale = float(payload.get("lengthscale_init", 0.5))
+    except (TypeError, ValueError) as error:
+        raise ValueError("初始长度尺度必须是数字") from error
+    if not (math.isfinite(lengthscale) and 1e-3 <= lengthscale <= 100):
+        raise ValueError("初始长度尺度需在 0.001–100 之间（输入已归一化到 0–1）")
+    feature_basis = payload.get("feature_basis", "mass")
+    if feature_basis not in ("mass", "mole"):
+        raise ValueError("输入特征只能是质量分数或摩尔分数")
+    settings.update(kernel=kernel, matern_nu=matern_nu, ard=ard, lengthscale_init=lengthscale,
+                    feature_basis=feature_basis,
+                    noise_std=optional_numbers(payload.get("noise_std"), names, "观测噪声标准差", True),
+                    ref_point=(optional_numbers(payload.get("ref_point"), names, "超体积参考点", False)
+                               if mode == "multi" else None))
+    return settings
 
 
 def job(directory, action):
@@ -142,7 +203,7 @@ def run_info(directory):
             _, rows = table(rec_path)
             missing = sum(not row[name].strip() for row in rows for name in state["targets"])
             state["feedback"] = {"status": "complete" if missing == 0 else "pending",
-                                 "missing_values": missing,
+                                 "missing_values": missing, "rows": len(rows),
                                  "source": state.get("feedback_sources", {}).get(str(round_id))}
     return state
 
@@ -157,7 +218,10 @@ def error_response(exc):
         status = 400
     else:
         status = 500
-    return jsonify({"code": type(exc).__name__, "message": str(exc)}), status
+    body = {"code": type(exc).__name__, "message": str(exc)}
+    if getattr(exc, "details", None):
+        body["details"] = exc.details
+    return jsonify(body), status
 
 
 @app.get("/")
@@ -241,9 +305,8 @@ def design_file(design_id, name):
 @app.get("/api/v1/designs/<design_id>/experiment-template")
 def experiment_template(design_id):
     names = target_names(request.args.getlist("target"))
-    fields, rows = table(path_for("designs", design_id) / "converted" / "pool_catalog.csv")
-    return csv_response(fields + names, [dict(row, **{x: "" for x in names}) for row in rows],
-                        "experiment_template.csv")
+    fields, rows = recipe_template(path_for("designs", design_id), names, source="pool")
+    return csv_response(fields, rows, "experiment_template.csv")
 
 
 @app.post("/api/v1/designs/<design_id>/observations")
@@ -257,6 +320,29 @@ def upload_observations(design_id):
         raise ValueError("A run already uses this experiment; create a new design to replace it")
     write_table(directory / "experiment.csv", fields, rows)
     return jsonify({"rows": len(rows), "complete": complete, "targets": names})
+
+
+@app.get("/api/v1/designs/<design_id>/recipe-template")
+def recipe_template_csv(design_id):
+    names = target_names(request.args.getlist("target"))
+    fields, rows = recipe_template(path_for("designs", design_id), names)
+    return csv_response(fields, rows, "recipe_template.csv")
+
+
+@app.post("/api/v1/designs/<design_id>/experiment-recipes")
+def upload_recipes(design_id):
+    directory = path_for("designs", design_id)
+    payload = request.get_json(force=True)
+    names = target_names(payload.get("targets"))
+    state = read_json(directory / "status.json")
+    if state.get("status") != "succeeded":
+        raise ValueError("候选池尚未生成完成，请稍候再上传")
+    if any((OUTPUT / "runs").glob(f"*/design_{design_id}")):
+        raise ValueError("该设计已有优化运行，实验数据已锁定；请新建设计或重新载入示例后再导入")
+    summary = import_recipes(directory, payload.get("csv"), names)
+    state.setdefault("counts", {})["feasible"] = summary["pool_size"]
+    save_json(directory / "status.json", state)
+    return jsonify(dict(summary, targets=names))
 
 
 def execute_bo(run_dir):
@@ -274,7 +360,7 @@ def sync_feedback(run_dir, state):
 def create_run(design_id):
     directory = path_for("designs", design_id)
     if not (directory / "experiment.csv").exists():
-        raise ValueError("Upload experiment CSV first")
+        raise ValueError("请先在「实验数据」上传实验 CSV")
     payload = request.get_json(force=True)
     mode = payload.get("mode")
     if mode not in ("single", "multi"):
@@ -282,20 +368,14 @@ def create_run(design_id):
     names = target_names(payload.get("targets"), mode)
     experiment_fields, experiments = table(directory / "experiment.csv")
     if any(x not in experiment_fields for x in names):
-        raise ValueError("Selected targets are not present in uploaded experiment CSV")
+        raise ValueError("所选目标列不在已上传的实验数据中；请检查目标列名，或按当前目标重新上传实验 CSV")
     complete = sum(all(row[name].strip() for name in names) for row in experiments)
     if complete < 2:
-        raise ValueError("At least two complete experimental rows are needed")
+        raise ValueError("至少需要 2 条目标值完整的实验才能开始优化")
     directions = payload.get("directions", ["max"] * len(names))
     if len(directions) != len(names) or any(x not in ("max", "min") for x in directions):
-        raise ValueError("Directions must be max or min for each target")
-    settings = {}
-    for key, lower, upper, default in (("batch_size", 1, 20, 3), ("mc_samples", 16, 2048, 128),
-                                        ("fit_maxiter", 10, 1000, 100), ("seed", 0, 2**31 - 1, 2026)):
-        value = int(payload.get(key, default))
-        if not lower <= value <= upper:
-            raise ValueError(f"{key} must be between {lower} and {upper}")
-        settings[key] = value
+        raise ValueError("每个目标的优化方向必须是最大化或最小化")
+    settings = model_settings(payload, mode, names)
     run_dir = OUTPUT / "runs" / uid()
     run_dir.mkdir(parents=True)
     state = {"status": "queued", "design_id": design_id, "mode": mode,

@@ -43,7 +43,7 @@ web_for_bo/
 │   ├── bo_utils.py         GP 拟合、采集函数、数据读取与回流等共用工具
 │   ├── simu_experiment.py  模拟实验回传（仅演示）
 │   └── visualize_bo.py     生成 visualization_<round>.json
-├── pool/                   generate_pool.py 撒点、convert_pool.py 转换；converted/ 为七元示例候选池与初始实验
+├── pool/                   generate_pool.py 撒点、convert_pool.py 转换、import_experiments.py 导入池外实验配方；converted/ 为七元示例候选池与初始实验
 ├── tests/                  algorithms/ 的单元测试
 └── docs/                   设计文档、命令行说明、池数据指南、Logo 原图
 ```

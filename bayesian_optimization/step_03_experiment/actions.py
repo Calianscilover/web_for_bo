@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from pool.import_experiments import import_recipes as merge_recipes, template as recipe_template_rows
+
 
 def read_table(path: Path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
@@ -66,6 +68,26 @@ def validate_upload(csv_text, catalog_path, names, expected_ids=None):
     if expected_ids is not None and seen != expected_ids:
         raise ValueError("Feedback must contain every issued recommendation row")
     return pool_fields + names, rows, complete
+
+
+def recipe_template(design_dir: Path, names, source="examples"):
+    """Recipe CSV columns (experiment_id, <component>_mass_g..., targets) and prefilled rows.
+
+    source="pool" lists every candidate; source="examples" gives EXAMPLE rows. Both upload
+    through import_recipes.
+    """
+    return recipe_template_rows(design_dir, names, source)
+
+
+def import_recipes(design_dir: Path, csv_text, names):
+    """Align lab recipes with the pool, appending new ones, and write experiment.csv.
+
+    Returns counts of matched, added, out-of-bounds and replicate rows; the per-row
+    sample_id/chem_group_id mapping is written to experiment_mapping.csv.
+    """
+    if not isinstance(csv_text, str) or len(csv_text.encode("utf-8")) > 20_000_000:
+        raise ValueError("文件需为 20 MB 以内的 CSV 文本")
+    return merge_recipes(design_dir, csv_text, names)
 
 
 def write_table(path, fields, rows):
