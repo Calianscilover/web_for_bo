@@ -230,7 +230,7 @@ pool.csv
 单目标模型可以直接读取 catalog，并选择质量比作为 GP 特征：
 
 ```bash
-python qLogNEI.py \
+python algorithms/qLogNEI.py \
   --mode experiment \
   --features pool/converted/pool_catalog.csv \
   --feature-basis mass \

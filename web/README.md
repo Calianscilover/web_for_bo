@@ -23,7 +23,7 @@ python bayesian_optimization/run.py --port 8765
 可视化脚本可独立运行：
 
 ```bash
-python visualize_bo.py --run-dir bo_test/runs/<run_id>
+python algorithms/visualize_bo.py --run-dir bo_test/runs/<run_id>
 ```
 
 它输出 `visualization_<round>.json`。拟合散点是训练集后验均值诊断，不代表留出集预测精度；超体积只由已测值计算，参考点沿用 `training_summary.json` 中供 qLogNEHVI 使用的固定值。设计参考：[Bgolearn 文档](https://bgolearn.github.io/docs/) 与 [BoTorch 多目标优化教程](https://botorch.org/docs/v0.17.2/tutorials/multi_objective_bo)。

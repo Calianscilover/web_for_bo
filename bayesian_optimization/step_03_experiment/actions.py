@@ -84,9 +84,9 @@ def synchronize_feedback(run_dir: Path, design_dir: Path, targets: list[str], cu
     (cache / "matplotlib").mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MPLCONFIGDIR", str(cache / "matplotlib"))
     os.environ.setdefault("XDG_CACHE_HOME", str(cache))
-    root = Path(__file__).resolve().parents[2]
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    algorithms = Path(__file__).resolve().parents[2] / "algorithms"
+    if str(algorithms) not in sys.path:
+        sys.path.insert(0, str(algorithms))
     from bo_utils import sync_observations
     _, next_round, pending = sync_observations(
         design_dir / "experiment.csv", design_dir / "converted" / "pool_catalog.csv",
@@ -98,7 +98,7 @@ def synchronize_feedback(run_dir: Path, design_dir: Path, targets: list[str], cu
 def simulate_feedback(run_dir: Path, seed: int = 2026) -> str:
     """Fill the current recommendation using the existing demo simulator."""
     root = Path(__file__).resolve().parents[2]
-    result = subprocess.run([sys.executable, str(root / "simu_experiment.py"),
+    result = subprocess.run([sys.executable, str(root / "algorithms" / "simu_experiment.py"),
                              "--output", str(run_dir), "--seed", str(seed)],
                             cwd=root, capture_output=True, text=True)
     if result.returncode:

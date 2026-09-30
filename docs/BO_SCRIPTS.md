@@ -13,15 +13,15 @@
 输入特征尚未确定时，可用 `--feature-columns` 显式指定两表共有的数值列。例如：
 
 ```bash
-python qLogNEI.py \
+python algorithms/qLogNEI.py \
   --feature-columns mass_ratio_0 mass_ratio_1 mass_ratio_2
 ```
 
 ## 训练与推荐
 
 ```bash
-python qLogNEI.py
-python qLogNEHVI.py
+python algorithms/qLogNEI.py
+python algorithms/qLogNEHVI.py
 ```
 
 可通过 `--experiment`、`--pool`、`--output` 指定输入和输出路径。单目标可用 `--target` 修改性能列；双目标可用 `--targets A B` 和 `--directions max min` 修改目标列及优化方向。两者保留原有的 `--kernel`、`--matern-nu`、`--ard`、`--lengthscale-init`、`--noise-std` 和 `--fit-maxiter` GP 参数。`--batch-size` 设置每次推荐配方数（默认 3）；`--mc-samples`、`--pool-batch-size` 和 `--seed` 控制采集函数计算。双目标的 `--ref-point A B` 使用原始目标单位；省略时从首次已测目标自动计算，后续轮次复用该参考点。
@@ -41,8 +41,8 @@ python qLogNEHVI.py
 模拟回传可用单独脚本。它只填本轮推荐文件中尚未获得的目标值，随机值从相应目标的已有实测范围中抽取；若该配方某目标早已实测，则保留原实测值。
 
 ```bash
-python simu_experiment.py --output outputs/single_training --seed 2026
-python qLogNEI.py
+python algorithms/simu_experiment.py --output outputs/single_training --seed 2026
+python algorithms/qLogNEI.py
 ```
 
 双目标只需将输出目录和入口改为 `multi_training`、`qLogNEHVI.py`。也可以用 `--recommendations` 指定某个推荐 CSV。模拟值仅用于验证数据回流，不代表真实实验结果。
@@ -52,5 +52,5 @@ python qLogNEI.py
 验证：
 
 ```bash
-python -m unittest test_acquisition test_qLogNEI test_qLogNEHVI
+python -m unittest discover -s tests
 ```

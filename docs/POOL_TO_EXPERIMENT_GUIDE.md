@@ -53,7 +53,7 @@ python pool/convert_pool.py \
 单目标推荐直接使用完整的 `pool_catalog.csv`：
 
 ```bash
-python qLogNEI.py \
+python algorithms/qLogNEI.py \
   --mode experiment \
   --features pool/converted/pool_catalog.csv \
   --feature-basis mass \

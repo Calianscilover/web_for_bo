@@ -26,27 +26,33 @@ python bayesian_optimization/run.py --port 8765
 ## 测试
 
 ```bash
-python web/test_integration.py                                  # 网页 API 端到端流程
-python -m unittest test_acquisition test_qLogNEI test_qLogNEHVI  # BO 脚本
-(cd pool && python -m unittest test_convert_pool)               # 候选池转换
+python web/test_integration.py                     # 网页 API 端到端流程
+python -m unittest discover -s tests               # BO 算法脚本
+(cd pool && python -m unittest test_convert_pool)  # 候选池转换
 ```
 
 ## 目录
 
-| 路径 | 内容 |
-| --- | --- |
-| `web/` | Flask 服务 `server.py`、静态页面 `static/`、集成测试和模块文档 `docs/` |
-| `bayesian_optimization/` | 网页调用的四步动作：撒点、候选池转换、实验上传与回传、训练推荐与可视化 |
-| `pool/` | `generate_pool.py` 撒点、`convert_pool.py` 转换；`converted/` 是七元示例候选池和初始实验数据 |
-| `qLogNEI.py`、`qLogNEHVI.py`、`bo_utils.py` | 单目标、双目标 BO 入口和共用的 GP、采集函数与数据回流工具 |
-| `simu_experiment.py`、`visualize_bo.py` | 模拟实验回传（仅演示）、可视化数据生成 |
-| `assets/` | 品牌 Logo 原图 |
+```text
+web_for_bo/
+├── web/                    网页：Flask 服务 server.py、静态页面 static/、集成测试、模块文档 docs/
+├── bayesian_optimization/  网页调用的四步动作：撒点 → 候选池转换 → 实验上传/回传 → 训练推荐/可视化
+├── algorithms/             BO 算法脚本（四步动作以子进程调用，也可命令行单独运行）
+│   ├── qLogNEI.py          单目标推荐入口
+│   ├── qLogNEHVI.py        双目标推荐入口
+│   ├── bo_utils.py         GP 拟合、采集函数、数据读取与回流等共用工具
+│   ├── simu_experiment.py  模拟实验回传（仅演示）
+│   └── visualize_bo.py     生成 visualization_<round>.json
+├── pool/                   generate_pool.py 撒点、convert_pool.py 转换；converted/ 为七元示例候选池与初始实验
+├── tests/                  algorithms/ 的单元测试
+└── docs/                   设计文档、命令行说明、池数据指南、Logo 原图
+```
 
 ## 文档
 
-- [ELECTROLYTE_UI_API_DESIGN.md](ELECTROLYTE_UI_API_DESIGN.md)：前后端设计方案与 API 契约
+- [docs/ELECTROLYTE_UI_API_DESIGN.md](docs/ELECTROLYTE_UI_API_DESIGN.md)：前后端设计方案与 API 契约
 - [web/README.md](web/README.md)：网页操作流程
 - [bayesian_optimization/README.md](bayesian_optimization/README.md)：四步工作流
-- [BO_SCRIPTS.md](BO_SCRIPTS.md)：命令行使用 BO 脚本
-- [POOL_TO_EXPERIMENT_GUIDE.md](POOL_TO_EXPERIMENT_GUIDE.md)、[pool/POOL_CONVERSION_DESIGN.md](pool/POOL_CONVERSION_DESIGN.md)：候选池到实验的数据流
+- [docs/BO_SCRIPTS.md](docs/BO_SCRIPTS.md)：命令行使用 BO 脚本
+- [docs/POOL_TO_EXPERIMENT_GUIDE.md](docs/POOL_TO_EXPERIMENT_GUIDE.md)、[pool/POOL_CONVERSION_DESIGN.md](pool/POOL_CONVERSION_DESIGN.md)：候选池到实验的数据流
 - [web/docs/DEPLOYMENT_AND_STORAGE.md](web/docs/DEPLOYMENT_AND_STORAGE.md)：迁移到服务器的部署与存储方案

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 import server
-sys.path.insert(0, str(server.ROOT))
+sys.path.insert(0, str(server.ROOT / "algorithms"))
 from visualize_bo import hypervolume
 
 

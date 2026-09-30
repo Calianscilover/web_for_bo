@@ -1,11 +1,14 @@
 """Build a small pool from the current experimental inputs for integration tests."""
 import csv
+import sys
 from pathlib import Path
 
-from bo_utils import save_csv
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "algorithms"))
+from bo_utils import save_csv  # noqa: E402
 
 
-SOURCE = Path(__file__).resolve().parent / "pool/converted"
+SOURCE = ROOT / "pool/converted"
 
 
 def small_pool(root, extra=4):

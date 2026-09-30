@@ -1,6 +1,6 @@
 # Bayesian Optimization 四步工作流
 
-本目录把网页调用的算法动作按数据流拆开。`web/server.py` 负责 HTTP、任务状态和目录隔离；这里的 `actions.py` 负责实际的数据和算法动作。原有的 `generate_pool.py`、`convert_pool.py`、`qLogNEI.py`、`qLogNEHVI.py`、`bo_utils.py`、`simu_experiment.py` 和 `visualize_bo.py` 仍是计算实现，避免在迁移时出现两份算法。
+本目录把网页调用的算法动作按数据流拆开。`web/server.py` 负责 HTTP、任务状态和目录隔离；这里的 `actions.py` 负责实际的数据和算法动作。`pool/` 下的 `generate_pool.py`、`convert_pool.py` 与 `algorithms/` 下的 `qLogNEI.py`、`qLogNEHVI.py`、`bo_utils.py`、`simu_experiment.py`、`visualize_bo.py` 仍是计算实现，避免在迁移时出现两份算法。
 
 ```text
 1 配方空间生成 → 2 候选池转换 → 3 实验数据导入/回传 → 4 模型训练/推荐/可视化

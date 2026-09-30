@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
+import test_support  # noqa: F401  (puts algorithms/ on sys.path)
 from bo_utils import (fit_model_data, fit_multi_model_data, initial_reference,
                       load_experiment_data, multi_recommendation, predict_candidates,
                       recommendation, save_csv, save_recommendations)
