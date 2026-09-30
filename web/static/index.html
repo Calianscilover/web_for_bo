@@ -65,15 +65,9 @@
           <div class="field-row target-row"><label>目标 1 列名<input id="target-1" value="Conductivity"></label><label>优化方向<select id="direction-1"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
           <div class="field-row target-row" id="target-2-row" hidden><label>目标 2 列名<input id="target-2" value="logCE"></label><label>优化方向<select id="direction-2"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
           <p class="hint">目标列名必须与上传文件的列名一致。LCE 与示例数据中的 logCE 不会自动互换。</p>
-          <div class="upload-tabs" role="tablist"><button data-upload="pool" class="selected">配方来自候选池</button><button data-upload="recipe">自有配方（可不在候选池）</button></div>
-          <div id="upload-pool" class="upload-panel">
-            <div class="callout"><strong>上传格式</strong><span>下载模板，仅保留已实验的配方行，填写目标性能列；请保留全部原始配方字段和列顺序。</span></div>
-            <div class="actions"><button id="template" class="secondary">下载实验模板 ↓</button><label class="upload-button">选择实验 CSV <input id="experiment-file" type="file" accept=".csv,text/csv"></label></div>
-          </div>
-          <div id="upload-recipe" class="upload-panel" hidden>
-            <div class="callout"><strong>按组分称量填写</strong><span>模板前两行 EXAMPLE 是填写示例（上传时自动忽略）：每行一个实验，填写各组分实际称量质量（g，总质量不限，未使用的组分留空）和目标值。无需转换脚本：与候选池相同的配方沿用原 sample_id，新配方自动加入候选池并按同一规则生成 sample_id 与 chem_group_id；重复配方的目标值取平均。</span></div>
-            <div class="actions"><button id="recipe-template" class="secondary">下载配方模板 ↓</button><label class="upload-button">选择配方 CSV <input id="recipe-file" type="file" accept=".csv,text/csv"></label><a id="mapping-link" class="download disabled" href="#">对齐结果 ↗</a></div>
-          </div>
+          <div class="callout"><strong>上传格式（两种模板列相同，随当前候选池组分变化）</strong><span>每行一个实验：experiment_id、各组分称量质量（g，总质量不限，未使用留空）和目标值。「候选池」模板列出全部候选，只需给做过的行填写目标值；「自有配方」模板附 EXAMPLE 示例，可追加不在候选池中的配方。未填目标值的行和 EXAMPLE 行自动忽略；新配方自动加入候选池并按同一规则生成 sample_id 与 chem_group_id，重复配方取平均。</span></div>
+          <div class="actions"><button id="template" class="secondary">下载模板 · 配方来自候选池 ↓</button><button id="recipe-template" class="secondary">下载模板 · 自有配方 ↓</button></div>
+          <div class="actions upload-row"><label class="upload-button">选择实验 CSV <input id="experiment-file" type="file" accept=".csv,text/csv"></label><a id="mapping-link" class="download disabled" href="#">对齐结果 ↗</a></div>
           <div id="experiment-result" class="result-line">尚未上传。七元示例已附带实测数据，可直接启动优化。</div>
         </div>
       </article>
