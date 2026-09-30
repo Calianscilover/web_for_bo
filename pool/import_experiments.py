@@ -2,11 +2,14 @@
 
 Input is a recipe CSV: optional ``experiment_id``, one ``<component>_mass_g`` (or
 ``<component>_mass_fraction``) column per design component, then the target columns.
+Catalog-layout files (compound_i + mass_ratio_i, e.g. an older experiment.csv) are also
+accepted when their components belong to the design.
 Each recipe is matched to pool.csv by its mass fractions (10 decimals, the precision of
 sample_id). Unmatched recipes are appended to pool.csv and the pool is reconverted, so
 sample_id and chem_group_id come from the same hashes as every sampled candidate.
 Replicates of one recipe are averaged per target. Rows whose experiment_id starts with
-EXAMPLE (the template's worked examples) and fully blank rows are skipped.
+EXAMPLE (the template's worked examples), rows without any target value and fully blank
+rows are skipped.
 
 Outputs in the design directory: pool.csv (appended), converted/, experiment.csv
 (catalog columns + targets) and experiment_mapping.csv (experiment_id -> sample_id).
@@ -84,15 +87,26 @@ def template_fields(design_dir, targets):
     return ["experiment_id", *(f"{item['name']}_mass_g" for item in components), *targets]
 
 
-def template(design_dir, targets):
-    """Header plus EXAMPLE rows: one recipe copied from the pool, one weighed freely.
+def template(design_dir, targets, source="examples"):
+    """One recipe CSV layout for every upload; only the prefilled rows differ.
 
-    Unused components are left blank; EXAMPLE rows are skipped on import.
+    source="pool" lists every candidate (experiment_id = sample_id, targets blank);
+    source="examples" gives EXAMPLE rows: one recipe copied from the pool, one weighed
+    freely. Unused components are blank; EXAMPLE and unmeasured rows are skipped on import.
     """
     design_dir = Path(design_dir)
     fields = template_fields(design_dir, targets)
     _, pool = read_csv_file(design_dir / "pool.csv")
     mass_fields = fields[1:len(fields) - len(targets)]
+    if source == "pool":
+        _, catalog = read_csv_file(design_dir / "converted" / "pool_catalog.csv")
+        if len(catalog) != len(pool):
+            raise ValueError("Candidate catalog does not match pool.csv")
+        return fields, [{
+            "experiment_id": entry["sample_id"],
+            **{field: row[field] if float(row[field] or 0) > 0 else "" for field in mass_fields},
+            **{name: "" for name in targets},
+        } for row, entry in zip(pool, catalog)]
     examples = []
     for number, (row, digits) in enumerate([(pool[0], None), (pool[len(pool) // 2], 2)], 1):
         example = {"experiment_id": f"{EXAMPLE_PREFIX}-{number:02d}"}
@@ -116,7 +130,33 @@ def parse_number(raw, label):
     return value
 
 
+def catalog_to_fractions(fields, rows, names):
+    """Rewrite catalog-layout rows (compound_i + mass_ratio_i) as <name>_mass_fraction rows."""
+    slots = sorted(int(field[9:]) for field in fields
+                   if field.startswith("compound_") and field[9:].isdigit())
+    unknown, converted = set(), []
+    for row in rows:
+        values = {f"{name}_mass_fraction": "" for name in names}
+        for slot in slots:
+            name = (row.get(f"compound_{slot}") or "").strip()
+            ratio = (row.get(f"mass_ratio_{slot}") or "").strip()
+            if not name or not ratio or float(ratio) == 0:
+                continue
+            if name not in names:
+                unknown.add(name)
+            values[f"{name}_mass_fraction"] = ratio
+        converted.append({"experiment_id": row.get("sample_id") or row.get("experiment_id") or "",
+                          **values, **{k: v for k, v in row.items() if k not in values}})
+    if unknown:
+        raise ValueError(f"CSV contains components outside this design: {', '.join(sorted(unknown))}; "
+                         "download the template of the current design or regenerate the pool")
+    extra = [field for field in fields if field not in {"experiment_id"}]
+    return ["experiment_id", *(f"{name}_mass_fraction" for name in names), *extra], converted
+
+
 def parse_recipes(fields, rows, names, targets, batch_mass):
+    if "compound_0" in fields and "mass_ratio_0" in fields:
+        fields, rows = catalog_to_fractions(fields, rows, names)
     by_suffix = {suffix: [f"{name}{suffix}" for name in names]
                  for suffix in ("_mass_g", "_mass_fraction")}
     unknown = [field for field in fields
@@ -133,15 +173,22 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
     if missing:
         raise ValueError(f"Recipe CSV is missing target columns: {', '.join(missing)}")
     recipes = []
-    skipped = 0
+    skipped = {"examples": 0, "unmeasured": 0}
     for line, row in enumerate(rows, 2):
         if None in row and any((value or "").strip() for value in row[None]):
             raise ValueError(f"Row {line}: more values than header columns")
         experiment_id = (row.get("experiment_id") or "").strip()
         if experiment_id.upper().startswith(EXAMPLE_PREFIX):
-            skipped += 1
+            skipped["examples"] += 1
             continue
         if not any((row.get(field) or "").strip() for field in fields):
+            continue
+        measured = {}
+        for name in targets:
+            raw = (row.get(name) or "").strip()
+            measured[name] = parse_number(raw, f"Row {line}: {name}") if raw else None
+        if all(value is None for value in measured.values()):
+            skipped["unmeasured"] += 1
             continue
         values = []
         for column in by_suffix[suffix]:
@@ -156,10 +203,6 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
         if suffix == "_mass_fraction" and abs(total - 1) > 1e-6:
             raise ValueError(f"Row {line}: mass fractions sum to {total:.6g}, expected 1")
         fractions = [value / total for value in values]
-        measured = {}
-        for name in targets:
-            raw = (row.get(name) or "").strip()
-            measured[name] = parse_number(raw, f"Row {line}: {name}") if raw else None
         recipes.append({
             "row": line,
             "experiment_id": experiment_id or f"row_{line}",
@@ -168,8 +211,9 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
             "targets": measured,
         })
     if not recipes:
-        raise ValueError(f"Recipe CSV has no experiment rows ({skipped} {EXAMPLE_PREFIX} rows "
-                         "were ignored); add your own rows below the examples")
+        raise ValueError(f"CSV has no measured rows ({skipped['examples']} {EXAMPLE_PREFIX} rows and "
+                         f"{skipped['unmeasured']} rows without target values were ignored); "
+                         "fill the target columns of the experiments you ran")
     return recipes, skipped
 
 
@@ -296,7 +340,8 @@ def import_recipes(design_dir, csv_text, targets):
         "replicates_merged": len(recipes) - len(groups),
         "complete": sum(all(row[name] for name in targets) for row in experiment_rows),
         "pool_size": len(catalog),
-        "skipped_examples": skipped,
+        "skipped_examples": skipped["examples"],
+        "skipped_unmeasured": skipped["unmeasured"],
     }
 
 
@@ -306,10 +351,12 @@ def main(argv=None):
     parser.add_argument("--design-dir", type=Path, required=True)
     parser.add_argument("--recipes", type=Path, help="recipe CSV to import")
     parser.add_argument("--targets", nargs="+", required=True)
-    parser.add_argument("--template", type=Path, help="write a recipe template with EXAMPLE rows and exit")
+    parser.add_argument("--template", type=Path, help="write a recipe template and exit")
+    parser.add_argument("--template-source", choices=["examples", "pool"], default="examples",
+                        help="prefill the template with EXAMPLE rows or with every candidate")
     args = parser.parse_args(argv)
     if args.template:
-        write_csv(args.template, *template(args.design_dir, args.targets))
+        write_csv(args.template, *template(args.design_dir, args.targets, args.template_source))
         print(args.template)
         return
     if not args.recipes:
