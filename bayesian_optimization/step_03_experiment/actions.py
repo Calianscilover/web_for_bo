@@ -70,9 +70,13 @@ def validate_upload(csv_text, catalog_path, names, expected_ids=None):
     return pool_fields + names, rows, complete
 
 
-def recipe_template(design_dir: Path, names):
-    """Recipe CSV columns (experiment_id, <component>_mass_g..., targets) and EXAMPLE rows."""
-    return recipe_template_rows(design_dir, names)
+def recipe_template(design_dir: Path, names, source="examples"):
+    """Recipe CSV columns (experiment_id, <component>_mass_g..., targets) and prefilled rows.
+
+    source="pool" lists every candidate; source="examples" gives EXAMPLE rows. Both upload
+    through import_recipes.
+    """
+    return recipe_template_rows(design_dir, names, source)
 
 
 def import_recipes(design_dir: Path, csv_text, names):
