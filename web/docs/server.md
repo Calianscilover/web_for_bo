@@ -12,6 +12,7 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | --- | --- |
 | 创建/列出/查询设计 | `POST/GET /api/v1/designs`、`GET /api/v1/designs/{id}` |
 | 七元示例 | `POST /api/v1/designs/demo` |
+| 锂盐浓度换算提示（设计 JSON → 摩尔质量与 mol/kg 区间） | `POST /api/v1/salt-molality-range` |
 | 候选池、文件、实验模板 | `GET /api/v1/designs/{id}/candidates`、`files/{name}`、`experiment-template` |
 | 实验模板（列相同：experiment_id + 各组分 g + 目标） | `GET /api/v1/designs/{id}/experiment-template`（全部候选）、`recipe-template`（EXAMPLE 示例） |
 | 实验导入（候选池内外配方统一入口） | `POST /api/v1/designs/{id}/experiment-recipes` |

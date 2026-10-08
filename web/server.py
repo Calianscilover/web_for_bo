@@ -21,7 +21,8 @@ from werkzeug.exceptions import HTTPException
 ROOT = Path(__file__).resolve().parents[1]
 WEB = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
-from bayesian_optimization.step_01_formulation.actions import generate_formulations  # noqa: E402
+from bayesian_optimization.step_01_formulation.actions import (  # noqa: E402
+    generate_formulations, molality_range)
 from bayesian_optimization.step_02_pool.actions import convert_formulations, import_demo  # noqa: E402
 from bayesian_optimization.step_03_experiment.actions import (  # noqa: E402
     import_recipes, recipe_template, simulate_feedback as simulate_experiment,
@@ -255,6 +256,14 @@ def create_design():
 
     executor.submit(job, directory, action)
     return jsonify(design_info(directory)), 202
+
+
+@app.post("/api/v1/salt-molality-range")
+def salt_molality_range():
+    config = request.get_json(force=True)
+    if not isinstance(config, dict):
+        raise ValueError("Design must be a JSON object")
+    return jsonify(molality_range(config))
 
 
 @app.post("/api/v1/designs/demo")

@@ -27,9 +27,9 @@ from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 try:
-    from pool.convert_pool import convert, parse_args
+    from pool.convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
 except ImportError:
-    from convert_pool import convert, parse_args
+    from convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
 
 MAPPING_FIELDS = ["experiment_id", "recipe_row", "sample_id", "chem_group_id", "pool_status",
                   "within_design_bounds", "replicates"]
@@ -312,6 +312,9 @@ def pool_row(fields, components, recipe):
         row[f"{name}_mass_g"] = f"{mass:.10g}"
         row[f"{name}_mass_fraction"] = f"{fraction:.12g}"
         row[f"{name}_mole_fraction"] = f"{mole / total_moles:.12g}"
+    salt = next((item["name"] for item in components if item["role"] == "primary_salt"), None)
+    if f"{salt}_molality_mol_kg" in row:
+        row[f"{salt}_molality_mol_kg"] = format_molality(salt_molality(recipe["masses"], components))
     return row
 
 
@@ -334,7 +337,7 @@ def import_recipes(design_dir, csv_text, targets):
     config, components = load_design(design_dir)
     names = [item["name"] for item in components]
     reserved = {"sample_id", "chem_group_id", "solvents", "lithium_salts", "functional_additives",
-                "source_row", "presence_pattern"}
+                "source_row", "presence_pattern", MOLALITY_FIELD}
     if any(name in reserved or name.startswith(("compound_", "smiles_", "mass_ratio_", "mole_ratio_"))
            for name in targets):
         raise RecipeError("目标列名与候选池内部字段重名",

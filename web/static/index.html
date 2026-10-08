@@ -37,6 +37,7 @@
           <div class="subhead">锂盐 <small>范围以电解液总质量为分母</small></div>
           <div class="component-head"><span>名称</span><span>SMILES</span><span>质量分数下限</span><span>质量分数上限</span></div>
           <div class="component-row salt-row"><input id="salt-name" value="LiDFOB" aria-label="锂盐名称"><input id="salt-smiles" value="F[B-]1(OC(C(O1)=O)=O)F.[Li+]" aria-label="锂盐 SMILES"><input id="salt-low" type="number" min="0" max="1" step="0.01" value="0.10" aria-label="锂盐质量分数下限"><input id="salt-high" type="number" min="0" max="1" step="0.01" value="0.30" aria-label="锂盐质量分数上限"></div>
+          <p class="hint" id="salt-molality">换算锂盐浓度：计算中…</p>
           <div class="subhead with-action"><span>溶剂 <small>范围以溶剂池（扣除锂盐与添加剂）为分母，比例之和等于 1</small></span><button class="text-button" id="add-solvent">＋ 添加溶剂</button></div>
           <div class="component-head solvent-head"><span>名称</span><span>SMILES</span><span>池分数下限</span><span>池分数上限</span><span>基准</span><span></span></div>
           <div id="solvents"></div>

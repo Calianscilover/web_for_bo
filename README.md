@@ -1,6 +1,6 @@
 # web_for_bo：电解液配方贝叶斯优化工作台
 
-本地网页工作台：定义“一个锂盐 + 多个溶剂”的配方空间并撒点生成候选池，按模板上传实验结果，用 BoTorch 的 qLogNEI（单目标）或 qLogNEHVI（多目标，2–4 个）推荐下一批配方，回填实测值后继续多轮优化。
+本地网页工作台：定义“一个锂盐 + 多个溶剂 + 可选添加剂”的配方空间并撒点生成候选池，按模板上传实验结果，用 BoTorch 的 qLogNEI（单目标）或 qLogNEHVI（多目标，2–4 个）推荐下一批配方，回填实测值后继续多轮优化。
 
 ## 环境
 
@@ -15,13 +15,25 @@ conda activate botorch
 
 ## 启动
 
-在仓库根目录执行：
+在仓库根目录、已激活 `botorch` 环境下执行：
 
 ```bash
 python bayesian_optimization/run.py --port 8765
 ```
 
+模型优化会用启动服务的同一个 Python 以子进程运行 `algorithms/` 中的脚本，所以必须用装有 BoTorch 的解释器启动。若用 base 环境的 `python` 启动，页面能生成候选池、载入示例，但“开始优化”会失败，日志为 `ModuleNotFoundError: No module named 'botorch'`。可先用 `python -c "import botorch"` 确认当前环境。
+
 浏览器打开 <http://127.0.0.1:8765>。点击“载入七元示例”可以直接用自带的候选池与初始实验数据跑一轮。网页任务的输出写入 `bo_test/`，可用 `--output` 改到其他目录。
+
+## 配方表示与锂盐浓度
+
+撒点与 BO 特征都使用质量分数（或摩尔分数）：锂盐与添加剂的范围以电解液总质量为分母，溶剂范围以溶剂池为分母。为便于按化学习惯阅读，每条候选另外记录主锂盐的质量摩尔浓度（mol/kg）：
+
+$$
+b = \frac{m_\text{锂盐} / M_\text{锂盐}}{(m_\text{基准溶剂} + m_\text{共溶剂}) / 1000}
+$$
+
+分母只计溶剂，不计功能添加剂与锂盐添加剂，锂盐添加剂中的 Li⁺ 也不计入。该值写在 `pool.csv` 的 `<盐名>_molality_mol_kg` 和 `pool_catalog.csv` 的 `salt_molality_mol_kg` 中，随推荐与 `observation.csv` 一起输出；它只用于展示，不进入 BO 特征，也不参与 `sample_id`。网页第一部分会按锂盐与添加剂的质量分数上下限实时显示换算的浓度区间。
 
 ## 测试
 

@@ -8,6 +8,10 @@ optional: each is left out of a candidate with probability ``sampling.absence_pr
 (default 0.25), so the pool also contains the sub-formulations without them. A component
 that is present weighs at least its ``minimum_nonzero_mass_g`` (default: one weighing
 step). ``absence_probability`` 0 reproduces the earlier fully-populated sampling.
+
+Each row also records ``<salt>_molality_mol_kg``: moles of the primary salt per kg of
+solvents (balance solvent + cosolvents), computed from the weighed masses. It is reported
+only; sampling stays in mass fractions.
 """
 from __future__ import annotations
 
@@ -21,6 +25,11 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 from scipy.stats import qmc
+
+try:
+    from pool.convert_pool import format_molality, salt_molality
+except ImportError:
+    from convert_pool import format_molality, salt_molality
 
 ADDITIVE_ROLES = ("functional_additive", "salt_additive")
 DEFAULT_ABSENCE_PROBABILITY = 0.25
@@ -107,6 +116,32 @@ def validate(config):
             absence, np.array(minimum))
 
 
+def salt_molality_range(config):
+    """Molality span (mol/kg of solvents) implied by the salt and additive mass-fraction bounds.
+
+    The lowest value uses the salt and additive lower bounds, the highest their upper
+    bounds, so every sampled candidate falls inside the returned range.
+    """
+    salt = config.get("salt") or {}
+    molecule = Chem.MolFromSmiles(str(salt.get("smiles", "")))
+    if molecule is None:
+        raise ValueError("Invalid SMILES for the lithium salt")
+    low, high = _bounds(salt.get("final_mass_fraction_bounds"), "Salt fraction")
+    additives = [_bounds(item.get("final_mass_fraction_bounds"), "Additive fraction")
+                 for item in config.get("additives") or []]
+    weight = Descriptors.MolWt(molecule)
+
+    def molality(salt_fraction, additive_fraction):
+        solvent = 1 - salt_fraction - additive_fraction
+        if solvent <= 0:
+            raise ValueError("Salt and additive upper bounds must leave mass for the solvents")
+        return 1000 * salt_fraction / (weight * solvent)
+
+    return {"molecular_weight": weight,
+            "low": molality(low, sum(x[0] for x in additives)),
+            "high": molality(high, sum(x[1] for x in additives))}
+
+
 def presence_masks(samples, column, bounds, additive_bounds, balance, absence, minimum):
     """Decide per candidate which optional solvents/additives are present.
 
@@ -184,7 +219,8 @@ def generate(config, output_dir):
         integral[row_index, order[row_index, :count]] += 1
     names = [item["name"] for item in components]
     weights = np.array([item["molecular_weight"] for item in components])
-    fields = ["presence_pattern"]
+    molality_field = f"{names[0]}_molality_mol_kg"
+    fields = ["presence_pattern", molality_field]
     for name in names:
         fields.extend([f"{name}_mass_g", f"{name}_mass_fraction", f"{name}_mole_fraction"])
     rows = []
@@ -210,7 +246,8 @@ def generate(config, output_dir):
             continue
         moles = mass / weights
         mole_fraction = moles / moles.sum()
-        row = {"presence_pattern": ";".join(name for name, x in zip(names, amount) if x > 0)}
+        row = {"presence_pattern": ";".join(name for name, x in zip(names, amount) if x > 0),
+               molality_field: format_molality(salt_molality(amount * step, components))}
         for j, name in enumerate(names):
             row[f"{name}_mass_g"] = f"{amount[j] * step:.10g}"
             row[f"{name}_mass_fraction"] = f"{mass[j]:.12g}"
