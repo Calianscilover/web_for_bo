@@ -142,7 +142,12 @@ class LocalFlow(unittest.TestCase):
         directory = server.OUTPUT / "designs" / design_id
         fields, rows = server.table(directory / "converted" / "pool_catalog.csv")
         self.assertEqual(rows[0]["compound_3"], "VC")
+        span = self.client.post("/api/v1/salt-molality-range", json=config).get_json()
+        self.assertAlmostEqual(span["low"], 1000 * 0.1 / (span["molecular_weight"] * 0.89))
+        self.assertAlmostEqual(span["high"], 1000 * 0.3 / (span["molecular_weight"] * 0.65))
         for row in rows:
+            molality = float(row["salt_molality_mol_kg"])
+            self.assertTrue(span["low"] - 1e-9 <= molality <= span["high"] + 1e-9)
             self.assertEqual(row["functional_additives"], "VC")
             self.assertTrue(0.01 - 1e-12 <= float(row["mass_ratio_3"]) <= 0.05 + 1e-12)
             solvent_total = float(row["mass_ratio_1"]) + float(row["mass_ratio_2"])
@@ -207,6 +212,12 @@ class LocalFlow(unittest.TestCase):
         _, experiment = server.table(directory / "experiment.csv")
         values = {row["sample_id"]: float(row["Conductivity"]) for row in experiment}
         self.assertEqual(values[by_id["E2"]["sample_id"]], 5)
+        e2 = next(row for row in experiment if row["sample_id"] == by_id["E2"]["sample_id"])
+        self.assertAlmostEqual(float(e2["salt_molality_mol_kg"]),
+                               1000 * 1.0 / span["molecular_weight"] / 3.8)
+        _, grown = server.table(directory / "pool.csv")
+        self.assertAlmostEqual(float(grown[-2]["LiDFOB_molality_mol_kg"]),
+                               float(e2["salt_molality_mol_kg"]))
         again = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                  json={"targets": ["Conductivity"], "csv": recipes}).get_json()
         self.assertEqual((again["added"], again["pool_size"]), (0, summary["pool_size"]))
