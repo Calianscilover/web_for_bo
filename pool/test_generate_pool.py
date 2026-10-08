@@ -87,6 +87,17 @@ class PresenceSamplingTests(unittest.TestCase):
         self.assertTrue(fec and min(fec) >= 0.05 - 1e-12)
         self.assertTrue(tte and min(tte) >= 0.2 - 1e-12)
 
+    def test_salt_molality_counts_only_solvents(self):
+        _, rows = run(CONFIG)
+        span = app.salt_molality_range(CONFIG)
+        self.assertAlmostEqual(span["molecular_weight"], 151.905, places=2)
+        for row in rows:
+            expected = 1000 * grams(row, "LiPF6") / span["molecular_weight"] / (
+                grams(row, "DME") + grams(row, "TTE"))
+            value = float(row["LiPF6_molality_mol_kg"])
+            self.assertAlmostEqual(value, expected, places=8)
+            self.assertTrue(span["low"] - 1e-9 <= value <= span["high"] + 1e-9)
+
     def test_rejects_invalid_absence_probability(self):
         for value in (-0.1, 1, float("nan")):
             config = copy.deepcopy(CONFIG)
