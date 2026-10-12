@@ -143,8 +143,9 @@ class LocalFlow(unittest.TestCase):
         fields, rows = server.table(directory / "converted" / "pool_catalog.csv")
         self.assertEqual(rows[0]["compound_3"], "VC")
         span = self.client.post("/api/v1/salt-molality-range", json=config).get_json()
-        self.assertAlmostEqual(span["low"], 1000 * 0.1 / (span["molecular_weight"] * 0.89))
-        self.assertAlmostEqual(span["high"], 1000 * 0.3 / (span["molecular_weight"] * 0.65))
+        weight, = span["molecular_weights"]
+        self.assertAlmostEqual(span["low"], 1000 * 0.1 / (weight * 0.89))
+        self.assertAlmostEqual(span["high"], 1000 * 0.3 / (weight * 0.65))
         for row in rows:
             molality = float(row["salt_molality_mol_kg"])
             self.assertTrue(span["low"] - 1e-9 <= molality <= span["high"] + 1e-9)
@@ -213,10 +214,9 @@ class LocalFlow(unittest.TestCase):
         values = {row["sample_id"]: float(row["Conductivity"]) for row in experiment}
         self.assertEqual(values[by_id["E2"]["sample_id"]], 5)
         e2 = next(row for row in experiment if row["sample_id"] == by_id["E2"]["sample_id"])
-        self.assertAlmostEqual(float(e2["salt_molality_mol_kg"]),
-                               1000 * 1.0 / span["molecular_weight"] / 3.8)
+        self.assertAlmostEqual(float(e2["salt_molality_mol_kg"]), 1000 * 1.0 / weight / 3.8)
         _, grown = server.table(directory / "pool.csv")
-        self.assertAlmostEqual(float(grown[-2]["LiDFOB_molality_mol_kg"]),
+        self.assertAlmostEqual(float(grown[-2]["salt_molality_mol_kg"]),
                                float(e2["salt_molality_mol_kg"]))
         again = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                  json={"targets": ["Conductivity"], "csv": recipes}).get_json()
@@ -234,6 +234,49 @@ class LocalFlow(unittest.TestCase):
         blocked = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
                                    json={"targets": ["Conductivity"], "csv": recipes})
         self.assertEqual(blocked.status_code, 400)
+
+    def test_two_salt_pool_import_and_round(self):
+        config = {key: value for key, value in CONFIG.items() if key != "salt"}
+        config["salts"] = [
+            dict(CONFIG["salt"], final_mass_fraction_bounds=[0, 0.2]),
+            {"name": "LiFSI", "smiles": "[Li+].O=S(=O)(F)[N-]S(=O)(=O)F",
+             "final_mass_fraction_bounds": [0, 0.15]},
+        ]
+        config["sampling"] = {"candidate_power": 6, "seed": 42}
+        design_id = self.client.post("/api/v1/designs", json=config).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        _, rows = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual((rows[0]["compound_0"], rows[0]["compound_1"]), ("LiDFOB", "LiFSI"))
+        present = {(float(row["mass_ratio_0"]) > 0, float(row["mass_ratio_1"]) > 0) for row in rows}
+        self.assertEqual(present, {(True, True), (True, False), (False, True)})
+        span = self.client.post("/api/v1/salt-molality-range", json=config).get_json()
+        weights = span["molecular_weights"]
+        for row in rows:
+            salts = [float(row[f"mass_ratio_{i}"]) for i in (0, 1)]
+            solvent = float(row["mass_ratio_2"]) + float(row["mass_ratio_3"])
+            self.assertEqual(row["lithium_salts"],
+                             ";".join(name for name, x in zip(("LiDFOB", "LiFSI"), salts) if x > 0))
+            self.assertAlmostEqual(float(row["salt_molality_mol_kg"]),
+                                   1000 * sum(x / w for x, w in zip(salts, weights)) / solvent)
+            self.assertTrue(span["low"] - 1e-9 <= float(row["salt_molality_mol_kg"])
+                            <= span["high"] + 1e-9)
+        recipes = ("experiment_id,LiDFOB_mass_g,LiFSI_mass_g,NDFA_mass_g,TTE_mass_g,Conductivity\n"
+                   "A,0.5,0.4,3.0,1.1,4\nB,0.5,1.0,2.5,1.0,5\n")
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        _, mapping = server.table(directory / "experiment_mapping.csv")
+        self.assertEqual([row["within_design_bounds"] for row in mapping], ["true", "false"])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        run_id = run.get_json()["run_id"]
+        self.assertEqual(self.wait(f"/api/v1/optimization-runs/{run_id}")["round"], 1)
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertEqual(len(rec["rows"]), 2)
 
     def test_pool_template_uses_recipe_layout(self):
         design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
