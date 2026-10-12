@@ -14,7 +14,7 @@ python bayesian_optimization/run.py --port 8765
 
 ## 流程
 
-1. 填写锂盐、溶剂 SMILES 和范围，点击“生成候选池”；也可点击“载入七元示例”，用现有候选池和初始实验表快速演示。锂盐行下方实时显示由质量分数上下限换算的锂盐浓度区间（mol/kg，锂盐摩尔数 ÷ 溶剂质量，不计添加剂）。
+1. 填写锂盐（一至两种，点击“＋ 添加锂盐”加入第二种）、溶剂 SMILES 和范围，点击“生成候选池”；也可点击“载入七元示例”，用现有候选池和初始实验表快速演示。锂盐行下方实时显示由质量分数上下限换算的锂盐浓度区间（mol/kg，锂盐总摩尔数 ÷ 溶剂质量，不计添加剂）。
 2. 候选池表格与推荐表格都有“锂盐浓度 mol/kg”列（`salt_molality_mol_kg`）。下载 `pool_catalog.csv` 检查候选配方。从“实验数据”处下载模板，仅保留已实验的行，填写目标性能值后上传。上传 CSV 必须保留候选池的全部原始列及顺序，最后是所选目标列。
 3. 选择单目标或多目标（2–4 个目标）、性能列和优化方向，点击“开始优化”。网页异步调用原有 `qLogNEI.py` 或 `qLogNEHVI.py`，在结果卡片预览并下载 `recommendation_1.csv`。
 4. 真实实验完成后，可在推荐表下逐条填写全部目标值并保存，也可在下载的推荐 CSV 中填写后上传；“模拟实验回传”只用于演示。接口逐行核对 `sample_id` 和完整配方，保留回传 CSV 原件，并立即合并更新 `observation.csv`。只有本轮全部推荐完成回传后才允许点击“生成下一轮”；下一轮产生 `recommendation_2.csv`，后续轮次同理。
@@ -28,7 +28,7 @@ python algorithms/visualize_bo.py --run-dir bo_test/runs/<run_id>
 
 它输出 `visualization_<round>.json`。拟合散点是训练集后验均值诊断，不代表留出集预测精度；超体积只由已测值计算，参考点沿用 `training_summary.json` 中供 qLogNEHVI 使用的固定值。设计参考：[Bgolearn 文档](https://bgolearn.github.io/docs/) 与 [BoTorch 多目标优化教程](https://botorch.org/docs/v0.17.2/tutorials/multi_objective_bo)。
 
-温度目前仅记录在设计配置中，不进入 BO 特征。新建空间支持一个锂盐、两个及以上溶剂和可选添加剂（功能添加剂或锂盐添加剂，范围以电解液总质量为分母）。实验数据可按候选池模板上传，也可按组分称量上传不在候选池中的自有配方，系统会把新配方并入候选池并生成一致的 `sample_id`/`chem_group_id`。目标名以 CSV 列名为准，示例使用 `Conductivity` 和 `logCE`，其中 `logCE` 不会自动等同于 `LCE`。
+温度目前仅记录在设计配置中，不进入 BO 特征。新建空间支持一至两种锂盐（双盐时下限为 0 的盐为可选组分，每个候选至少含一种）、两个及以上溶剂和可选添加剂（功能添加剂或锂盐添加剂，范围以电解液总质量为分母）。实验数据可按候选池模板上传，也可按组分称量上传不在候选池中的自有配方，系统会把新配方并入候选池并生成一致的 `sample_id`/`chem_group_id`。目标名以 CSV 列名为准，示例使用 `Conductivity` 和 `logCE`，其中 `logCE` 不会自动等同于 `LCE`。
 
 ## 验证
 
