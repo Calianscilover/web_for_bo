@@ -28,8 +28,10 @@ from rdkit.Chem import Descriptors
 
 try:
     from pool.convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
+    from pool.generate_pool import salt_list
 except ImportError:
     from convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
+    from generate_pool import salt_list
 
 MAPPING_FIELDS = ["experiment_id", "recipe_row", "sample_id", "chem_group_id", "pool_status",
                   "within_design_bounds", "replicates"]
@@ -276,10 +278,11 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
 
 def bounds_checker(config, names):
     """Return a design-bounds test for web-generated designs, or None when unknown."""
-    salt, solvents = config.get("salt"), config.get("solvents")
-    if not isinstance(salt, dict) or not isinstance(solvents, list):
+    solvents = config.get("solvents")
+    if not ("salt" in config or "salts" in config) or not isinstance(solvents, list):
         return None
-    limits = {str(salt["name"]).strip(): salt["final_mass_fraction_bounds"]}
+    limits = {str(salt["name"]).strip(): salt["final_mass_fraction_bounds"]
+              for salt in salt_list(config)}
     limits.update({str(item["name"]).strip(): item["final_mass_fraction_bounds"]
                    for item in config.get("additives") or []})
     pool = {str(item["name"]).strip(): item["pool_mass_fraction_bounds"] for item in solvents}
@@ -313,8 +316,10 @@ def pool_row(fields, components, recipe):
         row[f"{name}_mass_fraction"] = f"{fraction:.12g}"
         row[f"{name}_mole_fraction"] = f"{mole / total_moles:.12g}"
     salt = next((item["name"] for item in components if item["role"] == "primary_salt"), None)
-    if f"{salt}_molality_mol_kg" in row:
-        row[f"{salt}_molality_mol_kg"] = format_molality(salt_molality(recipe["masses"], components))
+    # Older single-salt pools name this column after their salt.
+    field = next((name for name in (MOLALITY_FIELD, f"{salt}_molality_mol_kg") if name in row), None)
+    if field:
+        row[field] = format_molality(salt_molality(recipe["masses"], components))
     return row
 
 

@@ -44,11 +44,10 @@ flowchart LR
   "temperature_C": 25,
   "batch_mass_g": 5.0,
   "mass_step_g": 0.0001,
-  "salt": {
-    "name": "LiDFOB",
-    "smiles": "F[B-]1(OC(C(O1)=O)=O)F.[Li+]",
-    "final_mass_fraction_bounds": [0.10, 0.30]
-  },
+  "salts": [
+    {"name": "LiDFOB", "smiles": "F[B-]1(OC(C(O1)=O)=O)F.[Li+]", "final_mass_fraction_bounds": [0.00, 0.30]},
+    {"name": "LiFSI", "smiles": "[Li+].O=S(=O)(F)[N-]S(=O)(=O)F", "final_mass_fraction_bounds": [0.00, 0.15]}
+  ],
   "solvents": [
     {"name": "NDFA", "smiles": "CN(C)C(=O)C(F)(F)F", "balance": true, "pool_mass_fraction_bounds": [0.50, 1.00]},
     {"name": "TTE", "smiles": "FC(F)(OCC(F)(F)C(F)F)C(F)F", "pool_mass_fraction_bounds": [0.00, 0.50]}
@@ -57,7 +56,7 @@ flowchart LR
 }
 ```
 
-约定：锂盐范围以**最终电解液总质量**为分母；各溶剂范围以**除锂盐以外的溶剂池质量**为分母。对每个生成点，先取锂盐质量分数 `s`，再取各溶剂池分数 `q_i`，要求 `Σq_i=1` 且各 `q_i` 落在用户输入的区间内；最终电解液分数为锂盐 `s`、各溶剂 `(1-s)q_i`，总和也为 1。后端检查各区间为 `[0,1]` 内有序数值、`Σ下限 ≤ 1 ≤ Σ上限`、恰好一个基准溶剂、SMILES 可解析、名称唯一、质量步长可称量。锂盐用量范围必须提供；首版不加入摩尔浓度、密度或其他化学约束。锂盐的质量摩尔浓度（mol/kg 溶剂）只作展示：步骤 1 显示由上下限换算的区间，`pool.csv`/`pool_catalog.csv` 每行记录精确值。
+`salts` 含一至两种锂盐；单盐也可写成 `"salt": {...}`。两种盐地位相同，下限为 0 的为可选组分，每个候选至少含一种。约定：锂盐范围以**最终电解液总质量**为分母；各溶剂范围以**除锂盐以外的溶剂池质量**为分母。对每个生成点，先取锂盐质量分数 `s`，再取各溶剂池分数 `q_i`，要求 `Σq_i=1` 且各 `q_i` 落在用户输入的区间内；最终电解液分数为锂盐 `s`、各溶剂 `(1-s)q_i`，总和也为 1。后端检查各区间为 `[0,1]` 内有序数值、`Σ下限 ≤ 1 ≤ Σ上限`、恰好一个基准溶剂、SMILES 可解析、名称唯一、质量步长可称量。锂盐用量范围必须提供；首版不加入摩尔浓度、密度或其他化学约束。锂盐的质量摩尔浓度（mol/kg 溶剂）只作展示：步骤 1 显示由上下限换算的区间，`pool.csv`/`pool_catalog.csv` 每行记录精确值。
 
 ## 4. 后端服务与文件流转
 
@@ -83,12 +82,12 @@ flowchart LR
 
 建议新增 `pool/generate_pool.py`，输入为设计 JSON 和输出目录，输出与当前七元 DoE 的表头兼容，不增加复杂的专属化学约束：
 
-1. 读取一个锂盐和多个溶剂，使用 RDKit 校验并规范化 SMILES，计算分子量；输出带组分顺序的 `components.csv` 和不可变的 `config_snapshot.json`。一个锂盐标为 `primary_salt`，一个指定的基准溶剂标为 `balance_solvent`，其余标为 `cosolvent`，以适配转换脚本。
+1. 读取一至两种锂盐和多个溶剂，使用 RDKit 校验并规范化 SMILES，计算分子量；输出带组分顺序的 `components.csv` 和不可变的 `config_snapshot.json`。每种锂盐都标为 `primary_salt`，一个指定的基准溶剂标为 `balance_solvent`，其余标为 `cosolvent`，以适配转换脚本。
 2. 使用固定种子的 Sobol 序列采样 `s` 和溶剂池分数。溶剂分数必须严格满足 `Σq_i=1`，并满足每个溶剂自身的上下限。可采用逐项剩余额度法：为当前溶剂计算不破坏剩余组分上下限的可行区间，再用 Sobol 数值在该区间采样；最后一个溶剂取剩余分数。不能先独立采样再简单归一化，因为那样可能越过原定上下限。下限为 0 的共溶剂（基准溶剂除外）与添加剂视为可选组分：每个可选组分多用一个 Sobol 维度，以 `sampling.absence_probability`（默认 0.25）的概率不加入，从而在 N 元设计中也撒出 N−1 元等子配方；加入时质量不低于该组分的 `minimum_nonzero_mass_g`（默认一个称量步长）。若剩余溶剂上限之和不足 1，缺席的共溶剂会被补回；此时由最后一个在场溶剂取剩余分数。
 3. 计算各组分最终质量分数 `w_s=s`、`w_i=(1-s)q_i`；按 `batch_mass_g` 与 `mass_step_g` 离散成可称量质量，再以离散后的值重算质量分数与摩尔分数。复核溶剂池范围及总质量，删除不合格和质量向量重复的点。
 4. 输出 `feasible_candidates.csv` 和供转换脚本读取的 `pool.csv`。每行至少包括 `presence_pattern`，以及对每个组分的 `<name>_mass_g`、`<name>_mass_fraction`、`<name>_mole_fraction`。`pool.csv` 可与 `feasible_candidates.csv` 使用相同内容。温度只保存在 JSON 与 UI 任务元数据中。
 
-输入为一个主锂盐、若干溶剂和可选添加剂。添加剂角色为 `functional_additive`（如 VC、TMSP）或 `salt_additive`（如 LiNO3），其范围与锂盐一样以电解液总质量为分母；溶剂分享扣除盐与添加剂后的质量，即 `w_i=(1-s-Σa)q_i`。
+输入为一至两种主锂盐、若干溶剂和可选添加剂。添加剂角色为 `functional_additive`（如 VC、TMSP）或 `salt_additive`（如 LiNO3），其范围与锂盐一样以电解液总质量为分母；溶剂分享扣除盐与添加剂后的质量，即 `w_i=(1-Σs-Σa)q_i`。双盐时每种盐占一个 Sobol 维度，下限为 0 的盐另占一个有/无维度；两种盐同时抽到缺席时，补回有/无维度取值较大的那一种。
 
 `convert_pool.py` 要求配置中的每个组分有 `name`、受支持的 `role`、`smiles`；池表必须有 `presence_pattern`，以及每个组分的 `<name>_mass_g`、`<name>_mass_fraction`、`<name>_mole_fraction`。输出 `pool_catalog.csv` 含 `sample_id`、化学组 ID、各组分的 `compound_i`、`smiles_i`、`mass_ratio_i`、`mole_ratio_i`。转换时建议明确传 `--pool`、`--config`、`--output-dir`；`--feature-basis mass` 与 BO 当前默认质量分数特征一致。`pool_catalog.csv` 同时保留两套比例，所以以后仍可选择摩尔分数训练。
 
@@ -143,7 +142,7 @@ compound_0,smiles_0,mass_ratio_0,mole_ratio_0,...,Conductivity,LCE
 
 ## 8. 首版验收标准与待扩展项
 
-- 能创建“一个锂盐 + 多个溶剂”的 5 元或 7 元设计，撒点后的每行溶剂池分数之和为 1，各分数落在输入范围内，并输出与 `convert_pool.py` 兼容的候选文件；重复运行相同输入与种子时，候选内容和 `sample_id` 稳定。
+- 能创建“一至两种锂盐 + 多个溶剂”的 5 元或 7 元设计，撒点后的每行溶剂池分数之和为 1，各分数落在输入范围内，并输出与 `convert_pool.py` 兼容的候选文件；重复运行相同输入与种子时，候选内容和 `sample_id` 稳定。
 - 页面左上角显示提供的 DPTechnology／深势科技 Logo；能显示候选数量、预览/下载 `pool_catalog.csv`。
 - 实验结果必须按下载模板的完整配方列上传；CSV 校验能报告池外 ID、重复样本、配方字段不一致、空值和非法性能值。
 - 单目标、多目标分别调用正确脚本；至少两条完整实测数据时，能生成本轮预测和 `recommendation_1.csv`，推荐行来自候选池且性能列为空。

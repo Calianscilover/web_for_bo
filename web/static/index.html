@@ -34,9 +34,9 @@
         <div class="card-head"><div class="step" data-step="1">01</div><div><h2>配方空间</h2><p>定义锂盐、溶剂与添加剂范围</p></div></div>
         <div class="section-content">
           <div class="field-row"><label>设计名称<input id="design-name" value="电解液设计 · 25°C"></label><label>温度 <small>°C，仅记录</small><input id="temperature" type="number" value="25"></label></div>
-          <div class="subhead">锂盐 <small>范围以电解液总质量为分母</small></div>
-          <div class="component-head"><span>名称</span><span>SMILES</span><span>质量分数下限</span><span>质量分数上限</span></div>
-          <div class="component-row salt-row"><input id="salt-name" value="LiDFOB" aria-label="锂盐名称"><input id="salt-smiles" value="F[B-]1(OC(C(O1)=O)=O)F.[Li+]" aria-label="锂盐 SMILES"><input id="salt-low" type="number" min="0" max="1" step="0.01" value="0.10" aria-label="锂盐质量分数下限"><input id="salt-high" type="number" min="0" max="1" step="0.01" value="0.30" aria-label="锂盐质量分数上限"></div>
+          <div class="subhead with-action"><span>锂盐 <small>一至两种，范围以电解液总质量为分母；两种锂盐时下限为 0 的为可选组分，每个候选至少含一种</small></span><button class="text-button" id="add-salt">＋ 添加锂盐</button></div>
+          <div class="component-head salt-head"><span>名称</span><span>SMILES</span><span>质量分数下限</span><span>质量分数上限</span><span></span></div>
+          <div id="salts"></div>
           <p class="hint" id="salt-molality">换算锂盐浓度：计算中…</p>
           <div class="subhead with-action"><span>溶剂 <small>范围以溶剂池（扣除锂盐与添加剂）为分母，比例之和等于 1</small></span><button class="text-button" id="add-solvent">＋ 添加溶剂</button></div>
           <div class="component-head solvent-head"><span>名称</span><span>SMILES</span><span>池分数下限</span><span>池分数上限</span><span>基准</span><span></span></div>
