@@ -28,7 +28,8 @@ from bayesian_optimization.step_03_experiment.actions import (  # noqa: E402
     import_recipes, recipe_template, simulate_feedback as simulate_experiment,
     synchronize_feedback, validate_upload, write_table)
 from bayesian_optimization.step_04_optimization.actions import (  # noqa: E402
-    execute_round, refresh_visualization)
+    ACQUISITIONS, DEFAULT_ACQUISITION, PARAMETERS, acquisition_catalog, execute_round,
+    refresh_visualization)
 
 app = Flask(__name__, static_folder=str(WEB / "static"), static_url_path="/static")
 app.json.ensure_ascii = False
@@ -161,6 +162,21 @@ def model_settings(payload, mode, names):
     feature_basis = payload.get("feature_basis", "mass")
     if feature_basis not in ("mass", "mole"):
         raise ValueError("输入特征只能是质量分数或摩尔分数")
+    acquisition = payload.get("acquisition") or DEFAULT_ACQUISITION[mode]
+    presets = ACQUISITIONS[mode]
+    if acquisition not in presets:
+        raise ValueError(f"{'单' if mode == 'single' else '多'}目标采集函数只能是 "
+                         + "、".join(spec["label"] for spec in presets.values()))
+    settings["acquisition"] = acquisition
+    for name in presets[acquisition]["params"]:
+        spec = PARAMETERS[name]
+        try:
+            value = float(payload.get(name, spec["default"]))
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"{spec['label']}必须是数字") from error
+        if not (math.isfinite(value) and spec["min"] <= value <= spec["max"]):
+            raise ValueError(f"{spec['label']}需在 {spec['min']:g}–{spec['max']:g} 之间")
+        settings[name] = value
     settings.update(kernel=kernel, matern_nu=matern_nu, ard=ard, lengthscale_init=lengthscale,
                     feature_basis=feature_basis,
                     noise_std=optional_numbers(payload.get("noise_std"), names, "观测噪声标准差", True),
@@ -231,6 +247,11 @@ def error_response(exc):
 @app.get("/")
 def home():
     return app.send_static_file("index.html")
+
+
+@app.get("/api/v1/acquisitions")
+def list_acquisitions():
+    return jsonify(acquisition_catalog())
 
 
 @app.get("/api/v1/designs")

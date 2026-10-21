@@ -6,6 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ALGORITHMS = ROOT / "algorithms"
+if str(ALGORITHMS) not in sys.path:
+    sys.path.insert(0, str(ALGORITHMS))
+from acquisitions import (  # noqa: E402
+    ACQUISITIONS, DEFAULT_ACQUISITION, PARAMETERS, catalog as acquisition_catalog)
 
 
 def command_for(state: dict, run_dir: Path, design_dir: Path) -> list[str]:
@@ -23,6 +27,11 @@ def command_for(state: dict, run_dir: Path, design_dir: Path) -> list[str]:
                "--matern-nu", str(state.get("matern_nu", 2.5)),
                "--ard" if state.get("ard", True) else "--no-ard",
                "--lengthscale-init", str(state.get("lengthscale_init", 0.5))]
+    acquisition = state.get("acquisition") or DEFAULT_ACQUISITION[mode]
+    command += ["--acquisition", acquisition]
+    for name in ACQUISITIONS[mode][acquisition]["params"]:
+        command += [f"--{name.replace('_', '-')}",
+                    str(state.get(name, PARAMETERS[name]["default"]))]
     noise = [str(value) for value in state.get("noise_std") or []]
     if mode == "single":
         command += ["--target", state["targets"][0]]
