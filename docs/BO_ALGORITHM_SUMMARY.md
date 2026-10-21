@@ -285,7 +285,23 @@ $$
 
 ### 4.4 采集函数
 
-两种采集函数都通过 Monte Carlo 估计：从联合后验中抽 $N_{\text{mc}}$ 条样本（`SobolQMCNormalSampler`，即用 Sobol 序列生成的准随机正态基样本，方差比普通 MC 更低），再对样本求期望。
+采集函数由 `algorithms/acquisitions.py` 的预设注册表 `ACQUISITIONS` 按名称构造（`build_acquisition`），网页「采集与候选评分」与命令行 `--acquisition` 选择同一组预设，默认单目标 `qlognei`、多目标 `qlognehvi`：
+
+| 模式 | 预设 | BoTorch 类 | 说明 |
+| --- | --- | --- | --- |
+| 单目标 | `qlognei`（默认） | `qLogNoisyExpectedImprovement` | 以已测输入为 baseline，见下文 |
+| 单目标 | `qlogei` | `qLogExpectedImprovement` | `best_f` 取方向变号后的已测最优值，假定观测近似无噪声 |
+| 单目标 | `qucb` | `qUpperConfidenceBound` | 参数 `ucb_beta`（默认 2，0–100），越大越偏探索 |
+| 单目标 | `qpi` | `qProbabilityOfImprovement` | 超过已测最优的概率 |
+| 单目标 | `qsr` | `qSimpleRegret` | 后验均值，纯利用 |
+| 单目标 | `qstd` | `qPosteriorStandardDeviation` | 后验标准差，纯探索（主动学习建模） |
+| 多目标 | `qlognehvi`（默认） | `qLogNoisyExpectedHypervolumeImprovement` | 见下文 |
+| 多目标 | `qlogehvi` | `qLogExpectedHypervolumeImprovement` | 以已测 Pareto 前沿（`FastNondominatedPartitioning`）为基准 |
+| 多目标 | `qlognparego` | `qLogNParEGO` | 随机权重 Chebyshev 标量化，不使用参考点 |
+
+预设全部是 MC 采集函数，支持 4.5 的 pending 机制，因此任意 `batch_size` 都可用；解析式采集函数（如 `ExpectedImprovement`）不支持 `X_pending`，没有放入预设。模型拟合在方向变号后的目标上进行，所以每个预设都按"最大化"构造。所选预设及其参数写入 `training_summary.json` 的 `acquisition`、`acquisition_params`。新增预设只需在 `ACQUISITIONS` 中注册一个构造函数；带参数的预设还要在 `PARAMETERS` 中声明范围，并在 `qLogNEI.py`/`qLogNEHVI.py` 中加对应的命令行参数和在页面加输入框（ID 为 `hp-<参数名>`、外层 `hp-<参数名>-field`）。
+
+以下展开两个默认预设。它们都通过 Monte Carlo 估计：从联合后验中抽 $N_{\text{mc}}$ 条样本（`SobolQMCNormalSampler`，即用 Sobol 序列生成的准随机正态基样本，方差比普通 MC 更低），再对样本求期望。
 
 **单目标：qLogNEI**（`bo_utils.recommendation`）。噪声期望改进以已测输入 $X_b$ 为 baseline，对候选批 $X$ 和 baseline 的联合后验积分，不需要假定"当前最优值"是精确已知的：
 
@@ -338,7 +354,7 @@ $$
 3. 拟合 GP：单目标 SingleTaskGP；多目标 ModelListGP（每目标一个 GP）
 4. 记录 training_summary.json 与 model.pt
 5. 分块预测全部未测候选的 μ、σ → candidate_predictions*.csv
-6. 构造采集函数：
+6. 按 acquisition 构造采集函数（默认）：
      单目标 qLogNEI(X_baseline = X_b)
      多目标 qLogNEHVI(X_baseline = X_b, ref_point = r)
 7. 在未测候选中顺序贪心选 q 个点，映射回 sample_id
@@ -359,6 +375,8 @@ $$
 | `ard` / `lengthscale_init` | 开 / 0.5 | 同左 | ARD 与长度尺度初值 |
 | `noise_std` | 留空（自动推断） | 无 | 固定观测噪声（每目标一个） |
 | `ref_point` | 留空（自动） | 无 | 多目标参考点（原始单位） |
+| `acquisition` | `qlognei` / `qlognehvi` | 同左 | 采集函数预设（见 4.4） |
+| `ucb_beta` | 2 | 2 | 仅 `qucb`：探索权重 $\beta$ |
 
 ---
 
@@ -412,8 +430,9 @@ $$
 | 稳定 ID 与特征表 | `pool/convert_pool.py::transform_rows`、`convert` |
 | 数据对齐与归一化 | `algorithms/bo_utils.py::load_experiment_data` |
 | GP 拟合（单目标 / 多目标） | `algorithms/bo_utils.py::fit_model_data`、`fit_multi_model_data` |
-| qLogNEI 选点 | `algorithms/bo_utils.py::recommendation` |
-| 参考点与 qLogNEHVI 选点 | `algorithms/bo_utils.py::initial_reference`、`multi_recommendation` |
+| 采集函数预设与构造 | `algorithms/acquisitions.py::ACQUISITIONS`、`build_acquisition` |
+| 单目标选点 | `algorithms/bo_utils.py::recommendation` |
+| 参考点与多目标选点 | `algorithms/bo_utils.py::initial_reference`、`multi_recommendation` |
 | 候选预测与推荐写出 | `algorithms/bo_utils.py::predict_candidates`、`save_candidate_predictions`、`save_recommendations` |
 | 单轮入口 | `algorithms/qLogNEI.py::run`、`algorithms/qLogNEHVI.py::run` |
 | 网页调用参数组装 | `bayesian_optimization/step_04_optimization/actions.py::command_for` |

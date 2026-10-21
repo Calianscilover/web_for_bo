@@ -26,7 +26,7 @@ python algorithms/qLogNEHVI.py
 
 可通过 `--experiment`、`--pool`、`--output` 指定输入和输出路径。单目标可用 `--target` 修改性能列；多目标可用 `--targets A B [C [D]]`（2–4 个）和 `--directions`（每个目标一个，省略时全部为 `max`）修改目标列及优化方向；`--noise-std`、`--ref-point` 若填写，也需每个目标一个值。两者保留原有的 `--kernel`、`--matern-nu`、`--ard`、`--lengthscale-init`、`--noise-std` 和 `--fit-maxiter` GP 参数。`--batch-size` 设置每次推荐配方数（默认 3）；`--mc-samples`、`--pool-batch-size` 和 `--seed` 控制采集函数计算。多目标的 `--ref-point` 使用原始目标单位；省略时从首次已测目标自动计算，后续轮次复用该参考点。
 
-单目标使用 qLogNEI，多目标使用 qLogNEHVI（每个目标独立拟合一个 GP；上限 4 个目标，此时超体积仍可精确分解计算）。采集函数在未测候选中做离散批量选择，历史已测输入作为 baseline。拟合后的模型还会分块预测所有未测候选，预测均值会换回原始目标方向和单位。
+单目标默认使用 qLogNEI，多目标默认使用 qLogNEHVI（每个目标独立拟合一个 GP；上限 4 个目标，此时超体积仍可精确分解计算）。`--acquisition` 可换成其他预设：单目标 `qlognei`、`qlogei`、`qucb`（配合 `--ucb-beta`，默认 2）、`qpi`、`qsr`、`qstd`；多目标 `qlognehvi`、`qlogehvi`、`qlognparego`。预设定义见 `algorithms/acquisitions.py`，所选预设写入 `training_summary.json`。采集函数在未测候选中做离散批量选择，历史已测输入作为 baseline。拟合后的模型还会分块预测所有未测候选，预测均值会换回原始目标方向和单位。
 
 默认输出分别写入 `outputs/single_training/` 与 `outputs/multi_training/`：
 

@@ -13,6 +13,7 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 创建/列出/查询设计 | `POST/GET /api/v1/designs`、`GET /api/v1/designs/{id}` |
 | 七元示例 | `POST /api/v1/designs/demo` |
 | 锂盐浓度换算提示（设计 JSON → 各盐摩尔质量 `molecular_weights` 与总 mol/kg 区间） | `POST /api/v1/salt-molality-range` |
+| 采集函数预设（按 `single`/`multi` 列出 `id`、`label`、`description`、`params`，另有 `defaults` 与参数范围 `parameters`） | `GET /api/v1/acquisitions` |
 | 候选池、文件、实验模板 | `GET /api/v1/designs/{id}/candidates`、`files/{name}`、`experiment-template` |
 | 实验模板（列相同：experiment_id + 各组分 g + 目标） | `GET /api/v1/designs/{id}/experiment-template`（全部候选）、`recipe-template`（EXAMPLE 示例） |
 | 实验导入（候选池内外配方统一入口） | `POST /api/v1/designs/{id}/experiment-recipes` |
@@ -21,7 +22,7 @@ Flask 应用提供 `/api/v1` 接口。设计路由创建配方空间、加载七
 | 推荐/可视化/文件 | `GET /api/v1/optimization-runs/{id}/recommendations/{round}`、`visualization`、`files/{name}` |
 | 实测/模拟回传与下一轮 | `POST /api/v1/optimization-runs/{id}/feedback`、`simulate`、`next-round` |
 
-创建运行时 `model_settings` 校验全部模型超参数（整数范围、核函数与 Matérn ν 取值、默认核不可关闭 ARD、长度尺度 0.001–100、噪声为正且需每个目标都填或都留空、多目标参考点为有限数）；`target_names` 限定单目标 1 个、多目标 2–4 个（`MAX_OBJECTIVES`）目标列，并保存到运行的 `status.json`，后续轮次沿用同一组设置。
+创建运行时 `model_settings` 校验全部模型超参数（整数范围、核函数与 Matérn ν 取值、默认核不可关闭 ARD、长度尺度 0.001–100、噪声为正且需每个目标都填或都留空、多目标参考点为有限数、`acquisition` 属于当前模式的预设，缺省为模式默认值，预设参数如 `ucb_beta` 在 `PARAMETERS` 范围内且只保存所选预设用到的参数）；`target_names` 限定单目标 1 个、多目标 2–4 个（`MAX_OBJECTIVES`）目标列，并保存到运行的 `status.json`，后续轮次沿用同一组设置。
 
 校验错误统一返回 400 和 `{code, message}`；异常带 `details` 属性时（如实验 CSV 的 `RecipeError`）一并返回 `details` 列表，页面逐条显示。实验导入、目标列名和启动优化前的检查使用中文提示。
 
