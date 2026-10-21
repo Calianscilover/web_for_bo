@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from botorch.acquisition.logei import qLogNoisyExpectedImprovement
-from botorch.acquisition.multi_objective.logei import qLogNoisyExpectedHypervolumeImprovement
 from botorch.fit import fit_gpytorch_mll
 from botorch.models import ModelListGP, SingleTaskGP
 from botorch.models.transforms.outcome import Standardize
@@ -22,6 +21,8 @@ from botorch.optim import optimize_acqf_discrete
 from botorch.sampling.normal import SobolQMCNormalSampler
 from gpytorch.kernels import MaternKernel, RBFKernel, ScaleKernel
 from gpytorch.mlls import ExactMarginalLogLikelihood
+
+from acquisitions import build_acquisition, selected
 
 # Exact hypervolume box decompositions stay tractable up to four objectives.
 MAX_OBJECTIVES = 4
@@ -179,6 +180,7 @@ def record_training(output, data, model, args, label, ref_point=None,
         "pool_batch_size": args.pool_batch_size,
         "seed": args.seed,
     }
+    summary["acquisition"], summary["acquisition_params"] = selected(args, label)
     if ref_point is not None:
         summary["ref_point"] = np.asarray(ref_point).tolist()
     if observation_path is not None:
@@ -275,21 +277,18 @@ def _selected_indices(selected, data):
         ids.append(available.pop(match))
     return ids
 
-#以已测输入为 baseline，用 qLogNEI 在未测池中做离散批量选点，返回池行号。
+#用 args.acquisition 选定的单目标采集函数（默认 qLogNEI）在未测池中做离散批量选点，返回池行号。
 def recommendation(data, model, args):
     if not data.candidate_indices:
         return []
     torch.manual_seed(args.seed)
-    acquisition = qLogNoisyExpectedImprovement(
-        model=model, X_baseline=data.train_X,
-        sampler=SobolQMCNormalSampler(torch.Size([args.mc_samples]), seed=args.seed),
-    )
-    selected, _ = optimize_acqf_discrete(
+    acquisition = build_acquisition("single", model, data, args)
+    points, _ = optimize_acqf_discrete(
         acquisition, q=min(args.batch_size, len(data.candidate_indices)),
         choices=data.pool_X[data.candidate_indices], unique=True,
         max_batch_size=args.pool_batch_size,
     )
-    return _selected_indices(selected, data)
+    return _selected_indices(points, data)
 
 #根据初始已测多目标值生成超体积参考点，兼容最大化和最小化方向。
 def initial_reference(values, directions):
@@ -299,23 +298,18 @@ def initial_reference(values, directions):
     scale = np.where(span > 0, span, np.maximum(np.abs(signed).max(0), 1.0))
     return (signed.min(0) - 0.1 * scale) * signs
 
-#用 qLogNEHVI 和参考点进行多目标（2–4 个）离散批量选点。
+#用 args.acquisition 选定的多目标采集函数（默认 qLogNEHVI）和参考点进行多目标（2–4 个）离散批量选点。
 def multi_recommendation(data, model, args, ref_point):
     if not data.candidate_indices:
         return []
     torch.manual_seed(args.seed)
-    signs = data.pool_X.new_tensor([-1 if d == "min" else 1 for d in args.directions])
-    acquisition = qLogNoisyExpectedHypervolumeImprovement(
-        model=model, ref_point=data.pool_X.new_tensor(ref_point) * signs,
-        X_baseline=data.train_X,
-        sampler=SobolQMCNormalSampler(torch.Size([args.mc_samples]), seed=args.seed),
-    )
-    selected, _ = optimize_acqf_discrete(
+    acquisition = build_acquisition("multi", model, data, args, ref_point=ref_point)
+    points, _ = optimize_acqf_discrete(
         acquisition, q=min(args.batch_size, len(data.candidate_indices)),
         choices=data.pool_X[data.candidate_indices], unique=True,
         max_batch_size=args.pool_batch_size,
     )
-    return _selected_indices(selected, data)
+    return _selected_indices(points, data)
 
 #将全部未测候选的 sample_id、预测均值和标准差写入预测 CSV。
 def save_candidate_predictions(path, data, means, stds):

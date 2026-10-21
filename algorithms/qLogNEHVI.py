@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from acquisitions import ACQUISITIONS, DEFAULT_ACQUISITION
 from bo_utils import (MAX_OBJECTIVES, existing_recommendation_path, fit_multi_model_data,
                       initial_reference, load_experiment_data,
                       multi_recommendation, predict_candidates, recommendation_path,
@@ -44,6 +45,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--ref-point", nargs="+", type=float, default=None,
                         help="Reference values in original objective units")
+    parser.add_argument("--acquisition", choices=list(ACQUISITIONS["multi"]),
+                        default=DEFAULT_ACQUISITION["multi"])
     args = parser.parse_args()
     count = len(args.targets)
     if not 2 <= count <= MAX_OBJECTIVES or len(set(args.targets)) != count:
