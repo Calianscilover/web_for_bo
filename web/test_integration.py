@@ -297,6 +297,69 @@ class LocalFlow(unittest.TestCase):
         rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
         self.assertEqual(len(rec["rows"]), 2)
 
+    def test_five_salt_fixed_spaces_import_and_round(self):
+        config = {key: value for key, value in CONFIG.items() if key != "salt"}
+        extra = [
+            ("LiFSI", "[Li+].O=S(=O)(F)[N-]S(=O)(=O)F"),
+            ("LiPF6", "[Li+].F[P-](F)(F)(F)(F)F"),
+            ("LiBF4", "[Li+].F[B-](F)(F)F"),
+            ("LiNO3", "[Li+].[O-][N+](=O)[O-]"),
+        ]
+        config["salts"] = [dict(CONFIG["salt"], final_mass_fraction_bounds=[.02, .25])]
+        config["salts"] += [{"name": name, "smiles": smiles,
+                             "final_mass_fraction_bounds": [.02, .25]} for name, smiles in extra]
+        config["solvents"] = [dict(item, pool_mass_fraction_bounds=[.1, .8])
+                              for item in CONFIG["solvents"]]
+        config["solvents"].append({"name": "DME", "smiles": "COCCOC",
+                                    "pool_mass_fraction_bounds": [.1, .8]})
+        config["salt_selection"] = {"sizes": [1, 2]}
+        config["sampling"] = {"candidate_power": 7, "seed": 42, "require_all_solvents": True}
+        response = self.client.post("/api/v1/designs", json=config)
+        self.assertEqual(response.status_code, 202)
+        design_id = response.get_json()["design_id"]
+        info = self.wait(f"/api/v1/designs/{design_id}")
+        self.assertEqual(len(info["counts"]["salt_spaces"]), 15)
+        self.assertEqual(info["counts"]["generated"], 128)
+        self.assertTrue(all(space["feasible"] > 0 for space in info["counts"]["salt_spaces"]))
+        span = self.client.post("/api/v1/salt-molality-range", json=config)
+        self.assertEqual(span.status_code, 200)
+        directory = server.OUTPUT / "designs" / design_id
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        for row in catalog:
+            self.assertIn(sum(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5)), (1, 2))
+            self.assertTrue(all(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5, 8)))
+        text = self.client.get(f"/api/v1/designs/{design_id}/experiment-template?target=Conductivity"
+                               ).get_data(as_text=True).lstrip("\ufeff")
+        recipes = list(csv.DictReader(io.StringIO(text)))
+        selected = []
+        for space in info["counts"]["salt_spaces"]:
+            for row in recipes:
+                active = [salt["name"] for salt in config["salts"]
+                          if float(row[f"{salt['name']}_mass_g"] or 0) > 0]
+                if active == space["salts"]:
+                    selected.append(dict(row, Conductivity=str(2 + len(selected) / 5)))
+                    break
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=list(recipes[0]))
+        writer.writeheader()
+        writer.writerows(selected)
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": stream.getvalue()})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        self.assertEqual(imported.get_json()["out_of_bounds"], 0)
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202)
+        run_id = run.get_json()["run_id"]
+        info = self.wait(f"/api/v1/optimization-runs/{run_id}")
+        self.assertEqual(len(info["summary"]["feature_names"]), 8)
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertEqual(len(rec["rows"]), 2)
+        self.assertTrue(all(sum(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5)) in (1, 2)
+                            for row in rec["rows"]))
+
     def test_pool_template_uses_recipe_layout(self):
         design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
         self.wait(f"/api/v1/designs/{design_id}")

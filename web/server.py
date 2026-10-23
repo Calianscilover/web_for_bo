@@ -26,7 +26,7 @@ from bayesian_optimization.step_01_formulation.actions import (  # noqa: E402
 from bayesian_optimization.step_02_pool.actions import convert_formulations, import_demo  # noqa: E402
 from bayesian_optimization.step_03_experiment.actions import (  # noqa: E402
     import_recipes, recipe_template, simulate_feedback as simulate_experiment,
-    synchronize_feedback, validate_upload, write_table)
+    synchronize_feedback, validate_upload, write_table, apply_feedback)
 from bayesian_optimization.step_04_optimization.actions import (  # noqa: E402
     ACQUISITIONS, DEFAULT_ACQUISITION, PARAMETERS, acquisition_catalog, execute_round,
     refresh_visualization)
@@ -465,51 +465,13 @@ def upload_feedback(run_id):
         if state["status"] != "succeeded":
             raise ValueError("Wait for the current run to finish")
         round_id = state["round"]
-        rec_path = run_dir / f"recommendation_{round_id}.csv"
-        if not rec_path.exists():
-            raise ValueError("No recommendation available")
-        _, recommendations = table(rec_path)
-        if not recommendations:
-            raise ValueError("Recommendation batch is empty")
-        if any(any(row[name].strip() for name in state["targets"]) for row in recommendations):
-            raise ValueError("This recommendation already contains feedback")
-        expected = {row["sample_id"] for row in recommendations}
         payload = request.get_json(force=True)
         if not isinstance(payload, dict):
             raise ValueError("Feedback must be a JSON object")
-        csv_text = payload.get("csv")
-        if csv_text is None:
-            measurements = payload.get("measurements")
-            if not isinstance(measurements, list) or len(measurements) != len(recommendations):
-                raise ValueError("Provide one measured row for every recommendation")
-            entered = {}
-            for item in measurements:
-                if not isinstance(item, dict) or item.get("sample_id") not in expected:
-                    raise ValueError("Unknown recommended sample_id in feedback")
-                if item["sample_id"] in entered:
-                    raise ValueError("Duplicate sample_id in feedback")
-                values = item.get("values")
-                if not isinstance(values, dict) or set(values) != set(state["targets"]):
-                    raise ValueError("Each recommended row needs all selected target values")
-                entered[item["sample_id"]] = values
-            stream = io.StringIO()
-            rec_fields = list(recommendations[0])
-            writer = csv.DictWriter(stream, fieldnames=rec_fields)
-            writer.writeheader()
-            for row in recommendations:
-                writer.writerow({**row, **entered[row["sample_id"]]})
-            csv_text = stream.getvalue()
         design_dir = path_for("designs", state["design_id"])
-        fields, rows, complete = validate_upload(csv_text,
-            design_dir / "converted" / "pool_catalog.csv", state["targets"], expected)
-        if complete != len(rows):
-            raise ValueError("Every recommended target must be filled")
-        if len(rows) != len(recommendations):
-            raise ValueError("Feedback row count does not match recommendation")
-        audit = run_dir / "feedback_uploads"
-        audit.mkdir(exist_ok=True)
-        (audit / f"round_{round_id}_uploaded.csv").write_text(csv_text, encoding="utf-8")
-        write_table(rec_path, fields, rows)
+        rows = apply_feedback(run_dir, design_dir / "converted" / "pool_catalog.csv",
+                              state["targets"], round_id, measurements=payload.get("measurements"),
+                              csv_text=payload.get("csv"))
         state.setdefault("feedback_sources", {})[str(round_id)] = "real"
         save_json(run_dir / "status.json", state)
         sync_feedback(run_dir, state)
@@ -552,6 +514,10 @@ def next_round(run_id):
         save_json(run_dir / "status.json", state)
         executor.submit(job, run_dir, lambda: execute_bo(run_dir))
         return jsonify(run_info(run_dir)), 202
+
+
+from offline_benchmark.api import register as register_offline
+register_offline(app, lambda: OUTPUT, model_settings, lock_for)
 
 
 def main():

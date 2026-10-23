@@ -28,10 +28,10 @@ from rdkit.Chem import Descriptors
 
 try:
     from pool.convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
-    from pool.generate_pool import salt_list
+    from pool.generate_pool import salt_list, salt_spaces
 except ImportError:
     from convert_pool import MOLALITY_FIELD, convert, format_molality, parse_args, salt_molality
-    from generate_pool import salt_list
+    from generate_pool import salt_list, salt_spaces
 
 MAPPING_FIELDS = ["experiment_id", "recipe_row", "sample_id", "chem_group_id", "pool_status",
                   "within_design_bounds", "replicates"]
@@ -158,6 +158,26 @@ def parse_number(raw, line, column, problems, nonnegative):
     return value
 
 
+def recipe_composition(row, names, suffix, line):
+    """Shared online/offline recipe contract; blanks are unused components, not labels.
+
+    This validates only composition, so offline target selection remains a later gate.
+    """
+    problems, values = [], []
+    for name in names:
+        column = name + suffix
+        raw = (row.get(column) or "").strip()
+        values.append(parse_number(raw, line, column, problems, True) if raw else 0.0)
+    if problems:
+        raise RecipeError("配方数值无效", problems)
+    total = sum(values)
+    if total <= 0:
+        raise RecipeError("配方总质量为 0", [f"第 {line} 行：所有组分质量都为空或 0"])
+    if suffix == "_mass_fraction" and abs(total - 1) > 1e-6:
+        raise RecipeError("质量分数之和不为 1", [f"第 {line} 行：质量分数之和为 {total:.8g}，应为 1"])
+    return values, [value / total for value in values]
+
+
 def catalog_to_fractions(fields, rows, names):
     """Rewrite catalog-layout rows (compound_i + mass_ratio_i) as <name>_mass_fraction rows."""
     slots = sorted(int(field[9:]) for field in fields
@@ -242,20 +262,11 @@ def parse_recipes(fields, rows, names, targets, batch_mass):
         if len(problems) == count and all(value is None for value in measured.values()):
             skipped["unmeasured"] += 1
             continue
-        values = []
-        for column in by_suffix[suffix]:
-            raw = (row.get(column) or "").strip()
-            values.append(parse_number(raw, line, column, problems, True) if raw else 0.0)
-        if len(problems) > count:
+        try:
+            values, fractions = recipe_composition(row, names, suffix, line)
+        except RecipeError as exc:
+            problems.extend(exc.details)
             continue
-        total = sum(values)
-        if total <= 0:
-            problems.append(f"第 {line} 行：填写了目标值，但所有组分质量都为空或 0")
-            continue
-        if suffix == "_mass_fraction" and abs(total - 1) > 1e-6:
-            problems.append(f"第 {line} 行：质量分数之和为 {total:.4g}，应为 1")
-            continue
-        fractions = [value / total for value in values]
         recipes.append({
             "row": line,
             "experiment_id": experiment_id or f"row_{line}",
@@ -281,8 +292,13 @@ def bounds_checker(config, names):
     solvents = config.get("solvents")
     if not ("salt" in config or "salts" in config) or not isinstance(solvents, list):
         return None
-    limits = {str(salt["name"]).strip(): salt["final_mass_fraction_bounds"]
-              for salt in salt_list(config)}
+    library = salt_list(config)
+    limits = {str(salt["name"]).strip(): salt["final_mass_fraction_bounds"] for salt in library}
+    salt_names = set(limits)
+    spaces = salt_spaces(config)
+    allowed_names = ({frozenset(str(library[j]["name"]).strip() for j in space)
+                      for space in spaces} if spaces is not None else None)
+    required_solvents = config.get("sampling", {}).get("require_all_solvents", False)
     limits.update({str(item["name"]).strip(): item["final_mass_fraction_bounds"]
                    for item in config.get("additives") or []})
     pool = {str(item["name"]).strip(): item["pool_mass_fraction_bounds"] for item in solvents}
@@ -294,7 +310,12 @@ def bounds_checker(config, names):
         value = dict(zip(names, fractions))
         solvent_total = sum(value[name] for name in pool)
         return (solvent_total > 0
-                and all(inside(value[name], bounds) for name, bounds in limits.items())
+                and (allowed_names is None or frozenset(name for name in salt_names if value[name] > 0)
+                     in allowed_names)
+                and (not required_solvents or all(value[name] > 0 for name in pool))
+                and all(inside(value[name], bounds) or
+                        (allowed_names is not None and name in salt_names and value[name] == 0)
+                        for name, bounds in limits.items())
                 and all(inside(value[name] / solvent_total, bounds) for name, bounds in pool.items()))
 
     return check
@@ -350,6 +371,23 @@ def import_recipes(design_dir, csv_text, targets):
     fields, rows = read_csv_text(csv_text, strict=False)
     recipes, skipped = parse_recipes(fields, rows, names, targets,
                                      float(config.get("batch_mass_g", 5)))
+    # Keep the new fixed-space contract when measured recipes extend the pool.
+    # Other out-of-range measurements retain the existing import-and-warn policy.
+    spaces = salt_spaces(config) if "salt" in config or "salts" in config else None
+    if spaces is not None:
+        salt_names = [str(item["name"]).strip() for item in salt_list(config)]
+        allowed = {frozenset(salt_names[j] for j in space) for space in spaces}
+        required = config.get("sampling", {}).get("require_all_solvents", False)
+        solvent_names = [str(item["name"]).strip() for item in config["solvents"]]
+        problems = []
+        for recipe in recipes:
+            value = dict(zip(names, recipe["fractions"]))
+            if frozenset(name for name in salt_names if value[name] > 0) not in allowed:
+                problems.append(f"第 {recipe['row']} 行：实际加入的盐不符合预设单盐／双盐空间")
+            if required and any(value[name] <= 0 for name in solvent_names):
+                problems.append(f"第 {recipe['row']} 行：当前设计要求所有溶剂都加入")
+        if problems:
+            raise RecipeError("实验配方不符合固定组分空间，本次未导入任何数据", problems[:MAX_DETAILS])
     pool_path = design_dir / "pool.csv"
     original_text = pool_path.read_text(encoding="utf-8-sig")
     pool_fields, pool_rows = read_csv_text(original_text)
