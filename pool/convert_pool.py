@@ -12,11 +12,11 @@ from pathlib import Path
 
 import rdkit
 from rdkit import Chem
-from rdkit.Chem import inchi
+from rdkit.Chem import Descriptors, inchi
 
 
 ROOT = Path(__file__).resolve().parent
-SCRIPT_VERSION = "1.1.0"
+SCRIPT_VERSION = "1.2.0"
 ROLE_CATEGORIES = {
     "balance_solvent": "solvents",
     "cosolvent": "solvents",
@@ -24,6 +24,24 @@ ROLE_CATEGORIES = {
     "salt_additive": "lithium_salts",
     "functional_additive": "functional_additives",
 }
+SOLVENT_ROLES = ("balance_solvent", "cosolvent")
+MOLALITY_FIELD = "salt_molality_mol_kg"
+
+
+def salt_molality(masses, components):
+    """Primary-salt molality in mol per kg of solvents; additives and salt additives are excluded.
+
+    ``masses`` are in grams (any common scale) and align with ``components``, which need
+    ``role`` and ``molecular_weight``. Returns None when the recipe has no solvent.
+    """
+    salt = sum(mass / item["molecular_weight"] for mass, item in zip(masses, components)
+               if item["role"] == "primary_salt")
+    solvent = sum(mass for mass, item in zip(masses, components) if item["role"] in SOLVENT_ROLES)
+    return 1000 * salt / solvent if solvent > 0 else None
+
+
+def format_molality(value):
+    return "" if value is None else f"{value:.10g}"
 
 
 def parse_args(argv=None):
@@ -93,6 +111,7 @@ def load_components(config_path):
             "canonical_smiles": canonical_smiles,
             "inchi_key": inchi_key,
             "chemical_key": inchi_key or canonical_smiles,
+            "molecular_weight": Descriptors.MolWt(molecule),
         })
         seen_names.add(name)
     return config, components
@@ -213,6 +232,8 @@ def transform_rows(rows, components, feature_basis, presence_tolerance,
             "functional_additives": ";".join(categories["functional_additives"]),
             "source_row": source_row,
             "presence_pattern": row["presence_pattern"].strip(),
+            MOLALITY_FIELD: format_molality(
+                salt_molality([masses[name] for name in names], components)),
         }
         for index, component in enumerate(components):
             name = component["name"]

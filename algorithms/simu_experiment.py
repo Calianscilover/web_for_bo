@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 from pathlib import Path
 
@@ -47,10 +48,11 @@ def run(args):
             width = max(abs(low) * 0.1, 1.0)
             low, high = low - width, high + width
         ranges[name] = low, high
-    rng = np.random.default_rng(args.seed)
     generated = 0
     for row in recommendations:
         prior = observed.get(row["sample_id"], {})
+        digest = hashlib.sha256(row["sample_id"].encode("utf-8")).digest()
+        rng = np.random.default_rng([args.seed, int.from_bytes(digest[:8], "big")])
         for name in targets:
             if row[name].strip():
                 continue

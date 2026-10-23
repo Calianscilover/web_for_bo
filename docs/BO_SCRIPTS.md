@@ -4,10 +4,10 @@
 
 ## 输入
 
-- 实测结果：`pool/converted/experiment.csv`。单目标默认读取 `Conductivity`；双目标默认读取 `logCE` 和 `Conductivity`。
+- 实测结果：`pool/converted/experiment.csv`。单目标默认读取 `Conductivity`；多目标默认读取 `logCE` 和 `Conductivity`，可用 `--targets` 指定 2–4 个目标列。
 - 候选池：`pool/converted/pool_catalog.csv`。候选输入默认读取 `mass_ratio_0`、`mass_ratio_1` 等连续编号的数值列；`--feature-basis mole` 改为摩尔比例列。
 - 两表通过 `sample_id` 对齐，行顺序可以不同。实验表中的输入特征必须与候选池一致。目标值只从实验表读取；候选池即使含有目标列，也不会作为测量值使用。
-- 目标为空的实验行不参与模型训练，仍保留在候选池。双目标要求一行的两个目标都齐全。训练至少需要两行完整实测数据。
+- 目标为空的实验行不参与模型训练，仍保留在候选池。多目标要求一行的所有目标都齐全。训练至少需要两行完整实测数据。
 - 对整个候选池的所选特征做范围归一化；恒定特征被移除。训练记录会列出实际使用的特征及维度。
 
 输入特征尚未确定时，可用 `--feature-columns` 显式指定两表共有的数值列。例如：
@@ -24,9 +24,9 @@ python algorithms/qLogNEI.py
 python algorithms/qLogNEHVI.py
 ```
 
-可通过 `--experiment`、`--pool`、`--output` 指定输入和输出路径。单目标可用 `--target` 修改性能列；双目标可用 `--targets A B` 和 `--directions max min` 修改目标列及优化方向。两者保留原有的 `--kernel`、`--matern-nu`、`--ard`、`--lengthscale-init`、`--noise-std` 和 `--fit-maxiter` GP 参数。`--batch-size` 设置每次推荐配方数（默认 3）；`--mc-samples`、`--pool-batch-size` 和 `--seed` 控制采集函数计算。双目标的 `--ref-point A B` 使用原始目标单位；省略时从首次已测目标自动计算，后续轮次复用该参考点。
+可通过 `--experiment`、`--pool`、`--output` 指定输入和输出路径。单目标可用 `--target` 修改性能列；多目标可用 `--targets A B [C [D]]`（2–4 个）和 `--directions`（每个目标一个，省略时全部为 `max`）修改目标列及优化方向；`--noise-std`、`--ref-point` 若填写，也需每个目标一个值。两者保留原有的 `--kernel`、`--matern-nu`、`--ard`、`--lengthscale-init`、`--noise-std` 和 `--fit-maxiter` GP 参数。`--batch-size` 设置每次推荐配方数（默认 3）；`--mc-samples`、`--pool-batch-size` 和 `--seed` 控制采集函数计算。多目标的 `--ref-point` 使用原始目标单位；省略时从首次已测目标自动计算，后续轮次复用该参考点。
 
-单目标使用 qLogNEI，双目标使用 qLogNEHVI。采集函数在未测候选中做离散批量选择，历史已测输入作为 baseline。拟合后的模型还会分块预测所有未测候选，预测均值会换回原始目标方向和单位。
+单目标默认使用 qLogNEI，多目标默认使用 qLogNEHVI（每个目标独立拟合一个 GP；上限 4 个目标，此时超体积仍可精确分解计算）。`--acquisition` 可换成其他预设：单目标 `qlognei`、`qlogei`、`qucb`（配合 `--ucb-beta`，默认 2）、`qpi`、`qsr`、`qstd`；多目标 `qlognehvi`、`qlogehvi`、`qlognparego`。预设定义见 `algorithms/acquisitions.py`，所选预设写入 `training_summary.json`。采集函数在未测候选中做离散批量选择，历史已测输入作为 baseline。拟合后的模型还会分块预测所有未测候选，预测均值会换回原始目标方向和单位。
 
 默认输出分别写入 `outputs/single_training/` 与 `outputs/multi_training/`：
 
@@ -38,14 +38,14 @@ python algorithms/qLogNEHVI.py
 
 若推荐文件仍有待回填目标值，重复运行入口会暂停。填完 `recommendation_1.csv` 的目标列后，用相同命令再次运行，即生成 `recommendation_2.csv`、`candidate_predictions_2.csv`；后续依次编号。完整候选池耗尽时停止推荐。请保持实验与候选池文件、目标设置及输出目录一致。已有的 `recommendations.csv`、`recommendations_2.csv` 等旧文件仍可继续回流。
 
-模拟回传可用单独脚本。它只填本轮推荐文件中尚未获得的目标值，随机值从相应目标的已有实测范围中抽取；若该配方某目标早已实测，则保留原实测值。
+模拟回传可用单独脚本。它只填本轮推荐文件中尚未获得的目标值，随机值从相应目标的已有实测范围中抽取，随机数由 `--seed` 与配方 `sample_id` 共同决定：不同配方得到不同的值，同一配方重复模拟结果不变（各轮不会重复同一组数值）；若该配方某目标早已实测，则保留原实测值。
 
 ```bash
 python algorithms/simu_experiment.py --output outputs/single_training --seed 2026
 python algorithms/qLogNEI.py
 ```
 
-双目标只需将输出目录和入口改为 `multi_training`、`qLogNEHVI.py`。也可以用 `--recommendations` 指定某个推荐 CSV。模拟值仅用于验证数据回流，不代表真实实验结果。
+多目标只需将输出目录和入口改为 `multi_training`、`qLogNEHVI.py`。也可以用 `--recommendations` 指定某个推荐 CSV。模拟值仅用于验证数据回流，不代表真实实验结果。
 
 当前示例候选池有 9,656 条配方；`experiment.csv` 含 9 条，其中 8 条两个目标都完整。初次拟合使用这 8 条，其余 9,648 条为待评估候选。模型目标只从实验表或已合并的 `observation.csv` 读取，不从候选池读取。
 

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>离线策略比较 · 电解液优化</title><link rel="stylesheet" href="/static/styles.css"><link rel="stylesheet" href="/static/offline.css"></head>
+<body>
+<header class="topbar"><div class="brand"><img src="/static/logo.jpg" alt="DPTechnology 深势科技"><span class="brand-divider"></span><span>电解液优化工作台</span></div><nav class="workspace-tabs"><a href="/">在线实验优化</a><a href="/offline" aria-current="page">离线策略比较</a></nav><span class="local-pill">本地回放</span></header>
+<main class="offline-main">
+  <section class="hero"><div><h1>离线策略比较</h1></div></section>
+  <div id="offline-notice" role="status" hidden></div>
+  <div class="offline-grid">
+    <article class="card"><div class="card-head"><span class="step">01</span><div><h2>数据与配方校验</h2></div></div><div class="section-content">
+      <div class="actions first-actions"><label class="upload-button">选择实验／模拟 CSV<input id="offline-file" type="file" accept=".csv,text/csv"></label><button id="load-crr" class="secondary">载入 CRR 示例 · 41 条</button></div>
+      <div class="callout offline-format-guide"><strong>支持在线模板和模拟推理结果</strong><span>实验：experiment_id + 各组分 *_mass_g（或 *_mass_fraction）+ 性质列。与在线模块使用相同转换规则，EXAMPLE 示例和全空行跳过，未用组分可留空。模拟：compound_i + smiles_i + mass_ratio_i / mole_ratio_i / ratio_i + 性质列；ratio_i 需明确比例基准。</span></div>
+      <details><summary>使用现有实验模块的数据</summary><div class="field-row"><label>已有设计<select id="existing-source"><option value="">选择已有设计</option></select></label><div class="align-end"><button class="secondary" id="use-existing">读取实验 CSV</button></div></div></details>
+      <p id="dataset-caption" class="hint">原文件只读。上传后先识别表格结构，再检查配方；目标值在下一步单独校验。</p>
+      <div id="input-inspection" class="input-inspection" hidden></div>
+      <fieldset id="formulation-fields" disabled>
+        <div class="field-row"><label>配方格式<select id="offline-format"><option value="experiment_recipe">A · 在线实验模板（组分质量／分数）</option><option value="candidate_catalog">B · 候选池／模拟推理结果</option></select></label><label id="catalog-basis-field" hidden>比例列及物理含义<select id="catalog-basis"><option value="">请先上传并选择格式</option></select></label></div>
+        <p class="hint" id="format-note">质量列总质量不限，系统按在线模块规则转换为固定组分 ratio 特征。</p>
+        <label class="standalone-label">校验方式<select id="validation-mode"><option value="composition">仅组分数据 · 从文件读取（默认）</option><option value="chemistry">按配方设计校验 · 角色与化学约束</option></select></label>
+        <p id="validation-mode-note" class="hint">从文件建立固定组分特征，不要求预先登记身份库或指定盐／溶剂角色。</p>
+        <fieldset id="chemistry-settings" hidden disabled>
+        <label class="standalone-label">约束配置来源<select id="bound-design"><option value="">显式离线基础规则（下方设置）</option></select></label>
+        <p class="hint">基础规则检查盐种数和溶剂必含；比例范围从绑定设计或 JSON 校验。历史 constraint_* 标记不会代替本次检查。</p>
+        <div class="field-row"><label>最少盐种数<input id="offline-min-salts" type="number" min="1" max="12" value="1"></label><label>最多盐种数<input id="offline-max-salts" type="number" min="1" max="12" value="2"></label></div>
+        <label class="solvent-required"><input id="offline-solvents" type="checkbox" checked>每个配方包含全部绑定溶剂</label>
+        </fieldset>
+        <details><summary>可选组分信息／设计 JSON</summary><textarea id="design-json" aria-label="离线设计配置 JSON" placeholder='仅组分模式无需填写。质量模板若需换算摩尔分数，可提供 components 中各组分的 name 和 smiles；按设计校验可粘贴 config_snapshot.json。'></textarea></details>
+        <div class="actions"><button id="validate-formulations" class="primary">校验配方信息</button></div>
+      </fieldset>
+      <div id="formulation-report" class="result-line">等待上传数据。</div>
+      <div id="composition-preview" hidden></div>
+    </div></article>
+    <article class="card"><div class="card-head"><span class="step">02</span><div><h2>目标性质与数据冻结</h2></div></div><div class="section-content">
+      <fieldset id="target-fields" disabled>
+        <div class="field-row"><label>目标性质列<select id="offline-target"><option value="">先校验配方</option></select></label><label>优化方向<select id="offline-direction"><option value="max">最大化</option><option value="min">最小化</option></select></label></div>
+        <div class="field-row"><label>目标来源<select id="target-source"><option value="measured">已有实测值</option><option value="external_simulation">外部模拟／计算值</option></select></label><label>单位<input id="target-unit" value="%" placeholder="例如 %、mS/cm"></label></div>
+        <label class="solvent-required"><input id="exclude-missing" type="checkbox">明确排除没有目标值的配方</label>
+        <p class="hint">0 是有效目标。缺失值不填补；已有重复配方按所选目标取均值。CRR[%] 保留原名展示，内部自动使用安全别名。</p>
+        <div class="actions"><button id="validate-target" class="primary">校验目标性质</button><button id="freeze-dataset" class="secondary" disabled>冻结数据集</button></div>
+      </fieldset>
+      <div id="target-report" class="result-line">配方校验通过后开放。</div>
+      <div id="dataset-stats" class="offline-stats" hidden></div>
+      <div class="callout offline-explainer"><strong>每轮只揭示推荐配方的目标值</strong><span>其余已知目标留在查找表中，不进入模型训练。初始配方记为第 0 轮；未命中、运行失败和已经命中分别记录。</span></div>
+    </div></article>
+  </div>
+  <article class="card offline-section"><div class="card-head"><span class="step">03</span><div><h2>共同协议与比较策略</h2></div></div><div class="section-content">
+    <fieldset id="benchmark-fields" disabled>
+      <div class="protocol-grid"><label>初始配方数（随机挑选）<input id="offline-initial" type="number" min="2" value="8"></label><label>总预算（包含初始）<input id="offline-budget" type="number" min="3" value="24"></label><label>每轮配方数<input id="offline-batch" type="number" min="1" max="20" value="1"></label><label>正式重复次数<input id="offline-repeats" type="number" min="1" max="100" value="20"></label></div>
+      <div id="offline-methods" class="method-grid"></div>
+      <details><summary>共同模型与采集设置</summary><div class="protocol-grid"><label>输入特征<select id="offline-basis"><option value="mass">质量分数</option><option value="mole">摩尔分数</option></select></label><label>核函数<select id="offline-kernel"><option value="default">默认 RBF + ARD</option><option value="matern">Matérn 2.5 + ARD</option><option value="rbf">RBF + ARD</option></select></label><label>拟合最大迭代<input id="offline-fit" type="number" min="10" max="1000" value="100"></label><label>MC 样本数<input id="offline-mc" type="number" min="16" max="2048" value="128"></label><label>qUCB β<input id="offline-beta" type="number" min="0" max="100" step="any" value="2"></label><label>噪声标准差（空为自动）<input id="offline-noise" type="number" min="0" step="any" placeholder="自动估计"></label><label>主种子<input id="offline-seed" type="number" min="0" value="2026"></label></div></details>
+      <p class="hint" id="work-estimate">冻结数据后开始。快速试运行用 5 次重复，保持相同预算；快速结果只用于检查流程。</p>
+      <div class="actions"><button id="offline-start" class="primary">开始正式比较</button><button id="offline-quick" class="secondary">快速试运行 · 5 次</button></div>
+    </fieldset>
+  </div></article>
+  <article class="card offline-section"><div class="card-head"><span class="step">04</span><div><h2>进程与可视化</h2></div></div><div class="section-content">
+    <div class="field-row"><label>已有离线任务<select id="offline-history"><option value="">选择任务以恢复查看</option></select></label><div class="actions align-end"><button id="offline-cancel" class="secondary" disabled>取消任务</button><button id="offline-resume" class="secondary" disabled>恢复失败／停止任务</button></div></div>
+    <div id="job-status" class="result-line">尚未创建比较任务。</div>
+    <div id="results-panel" hidden>
+      <div id="results-context" class="hint"></div>
+      <div class="offline-grid visualization-grid"><div class="plot-panel"><h3 id="best-chart-title">已发现的目标性能最大值</h3><div id="best-chart"></div></div><div class="plot-panel"><h3>最优配方发现率</h3><div id="discovery-chart"></div></div></div>
+      <div id="method-legend" class="method-legend"></div>
+      <p class="hint plot-note">第 0 轮为共同初始化。左图为已完成重复的中位数，阴影为四分位区间；右图为相同实验预算下发现数据集最优配方的重复占比。</p>
+      <details class="result-details"><summary>方法汇总与结果导出</summary>
+      <div class="offline-downloads"><a id="download-summary" class="download">方法汇总 CSV ↓</a><a id="download-trials" class="download">各次重复 CSV ↓</a><a id="download-results" class="download">完整轨迹 JSON ↓</a><a id="download-config" class="download">冻结比较配置 ↓</a></div>
+      <div class="table-wrap offline-results-table"><table id="comparison-table"><thead><tr><th>策略</th><th>完成／计划</th><th>失败</th><th>最优命中</th><th>50% 命中预算</th><th>最终差距中位数</th><th>收敛面积 ↓</th><th>耗时中位数 s</th></tr></thead><tbody></tbody></table></div>
+      <p class="hint">命中率分母为计划重复次数；“50% 命中预算”未达到时显示 —。最终差距与面积仅统计完成的重复，未完成时结果为部分结果。</p>
+      </details>
+      <details class="result-details"><summary>单次查询轨迹</summary>
+      <div class="trace-head"><span class="hint">方法与重复</span><select id="trace-select" aria-label="选择方法与重复"></select></div><p id="trace-note" class="hint"></p>
+      <div class="table-wrap"><table id="trace-table"><thead><tr><th>轮次</th><th>sample_id</th><th>目标值</th><th>累计配方数</th><th>来源</th></tr></thead><tbody></tbody></table></div>
+      </details>
+    </div>
+  </div></article>
+  <footer>离线数据保存在 bo_test/offline/ · 原实验与在线运行保持独立</footer>
+</main><script src="/static/offline_charts.js"></script><script src="/static/offline.js"></script></body></html>

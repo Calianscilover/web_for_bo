@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "script_version": "1.1.0",
-  "generated_at_utc": "2026-09-28T03:59:37.481837+00:00",
+  "script_version": "1.2.0",
+  "generated_at_utc": "2026-10-08T03:46:37.438345+00:00",
   "rdkit_version": "2024.03.5",
   "inputs": {
     "pool": {
-      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/electrolyte_opt/pool/pool.csv",
+      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/web_for_bo/pool/pool.csv",
       "sha256": "c5422a51230a66d36c58b864e1e404deab595d7dff6ec6f959aa6c66c0f8efad"
     },
     "config": {
-      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/electrolyte_opt/pool/config_snapshot.json",
+      "path": "/Users/zilinchen/Documents/ChatGPT/BO_Algorithm_Development/web_for_bo/pool/config_snapshot.json",
       "sha256": "77d8c1743cc8f248e267a85fa802e87403a8a257d89e9a4e37c30544f73eed10"
     }
   },
@@ -28,7 +28,8 @@
       "smiles": "F[B-]1(OC(C(O1)=O)=O)F.[Li+]",
       "canonical_smiles": "O=C1O[B-](F)(F)OC1=O.[Li+]",
       "inchi_key": "MEDDCIKGDMDORY-UHFFFAOYSA-N",
-      "chemical_key": "MEDDCIKGDMDORY-UHFFFAOYSA-N"
+      "chemical_key": "MEDDCIKGDMDORY-UHFFFAOYSA-N",
+      "molecular_weight": 143.767
     },
     {
       "slot": 1,
@@ -38,7 +39,8 @@
       "smiles": "CN(C)C(=O)C(F)(F)F",
       "canonical_smiles": "CN(C)C(=O)C(F)(F)F",
       "inchi_key": "WXBWKMLIVXELSF-UHFFFAOYSA-N",
-      "chemical_key": "WXBWKMLIVXELSF-UHFFFAOYSA-N"
+      "chemical_key": "WXBWKMLIVXELSF-UHFFFAOYSA-N",
+      "molecular_weight": 141.09199999999998
     },
     {
       "slot": 2,
@@ -48,7 +50,8 @@
       "smiles": "FC(F)(OCC(F)(F)C(F)F)C(F)F",
       "canonical_smiles": "FC(F)C(F)(F)COC(F)(F)C(F)F",
       "inchi_key": "HCBRSIIGBBDDCD-UHFFFAOYSA-N",
-      "chemical_key": "HCBRSIIGBBDDCD-UHFFFAOYSA-N"
+      "chemical_key": "HCBRSIIGBBDDCD-UHFFFAOYSA-N",
+      "molecular_weight": 232.06999999999996
     },
     {
       "slot": 3,
@@ -58,7 +61,8 @@
       "smiles": "FC1COC(=O)O1",
       "canonical_smiles": "O=C1OCC(F)O1",
       "inchi_key": "SBLRHMKNNHXPHG-UHFFFAOYSA-N",
-      "chemical_key": "SBLRHMKNNHXPHG-UHFFFAOYSA-N"
+      "chemical_key": "SBLRHMKNNHXPHG-UHFFFAOYSA-N",
+      "molecular_weight": 106.05199999999999
     },
     {
       "slot": 4,
@@ -68,7 +72,8 @@
       "smiles": "[Li+].[O-][N+](=O)[O-]",
       "canonical_smiles": "O=[N+]([O-])[O-].[Li+]",
       "inchi_key": "IIPYXGDZVMZOAP-UHFFFAOYSA-N",
-      "chemical_key": "IIPYXGDZVMZOAP-UHFFFAOYSA-N"
+      "chemical_key": "IIPYXGDZVMZOAP-UHFFFAOYSA-N",
+      "molecular_weight": 68.94500000000001
     },
     {
       "slot": 5,
@@ -78,7 +83,8 @@
       "smiles": "O=C1OC=CO1",
       "canonical_smiles": "O=c1occo1",
       "inchi_key": "VAYTZRYEBVHVLE-UHFFFAOYSA-N",
-      "chemical_key": "VAYTZRYEBVHVLE-UHFFFAOYSA-N"
+      "chemical_key": "VAYTZRYEBVHVLE-UHFFFAOYSA-N",
+      "molecular_weight": 86.04599999999999
     },
     {
       "slot": 6,
@@ -88,7 +94,8 @@
       "smiles": "C[Si](C)(C)OP(O[Si](C)(C)C)O[Si](C)(C)C",
       "canonical_smiles": "C[Si](C)(C)OP(O[Si](C)(C)C)O[Si](C)(C)C",
       "inchi_key": "VMZOBROUFBEGAR-UHFFFAOYSA-N",
-      "chemical_key": "VMZOBROUFBEGAR-UHFFFAOYSA-N"
+      "chemical_key": "VMZOBROUFBEGAR-UHFFFAOYSA-N",
+      "molecular_weight": 298.54400000000004
     }
   ],
   "counts": {
@@ -118,6 +125,7 @@
         "functional_additives",
         "source_row",
         "presence_pattern",
+        "salt_molality_mol_kg",
         "compound_0",
         "smiles_0",
         "mass_ratio_0",
@@ -147,7 +155,7 @@
         "mass_ratio_6",
         "mole_ratio_6"
       ],
-      "sha256": "444a600603733e71db73526ed71a7106d4f822b38b08a37f4b0d408f86e4a944"
+      "sha256": "c10cf2e15daadebc6c6e6e3ad632c79c421362ef2d2983666d5e559d3f992425"
     }
   },
   "design_name": "seven_component_amide_electrolyte"

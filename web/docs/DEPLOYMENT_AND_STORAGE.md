@@ -63,7 +63,7 @@ SQLite 不是必需的第一个迁移步骤。仅一台服务器、少量用户�
 designs(id, owner_id, name, kind, status, temperature_c, created_at, updated_at,
         config_path, catalog_path, experiment_path)
 runs(id, design_id, mode, targets_json, directions_json, batch_size,
-     mc_samples, fit_maxiter, seed, current_round, status, error,
+     mc_samples, fit_maxiter, seed, hyperparameters_json, current_round, status, error,
      created_at, updated_at)
 rounds(run_id, round_number, recommendation_path, observation_path,
        visualization_path, feedback_source, status, created_at, completed_at)

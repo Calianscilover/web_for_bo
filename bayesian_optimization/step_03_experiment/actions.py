@@ -8,6 +8,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from pool.import_experiments import import_recipes as merge_recipes, template as recipe_template_rows
+
 
 def read_table(path: Path):
     with path.open(encoding="utf-8-sig", newline="") as stream:
@@ -68,6 +70,26 @@ def validate_upload(csv_text, catalog_path, names, expected_ids=None):
     return pool_fields + names, rows, complete
 
 
+def recipe_template(design_dir: Path, names, source="examples"):
+    """Recipe CSV columns (experiment_id, <component>_mass_g..., targets) and prefilled rows.
+
+    source="pool" lists every candidate; source="examples" gives EXAMPLE rows. Both upload
+    through import_recipes.
+    """
+    return recipe_template_rows(design_dir, names, source)
+
+
+def import_recipes(design_dir: Path, csv_text, names):
+    """Align lab recipes with the pool, appending new ones, and write experiment.csv.
+
+    Returns counts of matched, added, out-of-bounds and replicate rows; the per-row
+    sample_id/chem_group_id mapping is written to experiment_mapping.csv.
+    """
+    if not isinstance(csv_text, str) or len(csv_text.encode("utf-8")) > 20_000_000:
+        raise ValueError("文件需为 20 MB 以内的 CSV 文本")
+    return merge_recipes(design_dir, csv_text, names)
+
+
 def write_table(path, fields, rows):
     """Atomically replace a CSV file after the complete content is written."""
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -76,6 +98,44 @@ def write_table(path, fields, rows):
         writer.writeheader()
         writer.writerows(rows)
     temporary.replace(path)
+
+
+def apply_feedback(run_dir, catalog_path, targets, round_id, *, measurements=None, csv_text=None):
+    """Common online/offline feedback contract: validate the entire issued batch first."""
+    rec_path = run_dir / f"recommendation_{round_id}.csv"
+    if not rec_path.exists():
+        raise ValueError("No recommendation available")
+    rec_fields, recommendations = read_table(rec_path)
+    if not recommendations or any(any(row[name].strip() for name in targets) for row in recommendations):
+        raise ValueError("This recommendation is empty or already contains feedback")
+    expected = {row["sample_id"] for row in recommendations}
+    if csv_text is None:
+        if not isinstance(measurements, list) or len(measurements) != len(recommendations):
+            raise ValueError("Provide one measured row for every recommendation")
+        entered = {}
+        for item in measurements:
+            if not isinstance(item, dict) or item.get("sample_id") not in expected:
+                raise ValueError("Unknown recommended sample_id in feedback")
+            if item["sample_id"] in entered:
+                raise ValueError("Duplicate sample_id in feedback")
+            values = item.get("values")
+            if not isinstance(values, dict) or set(values) != set(targets):
+                raise ValueError("Each recommended row needs all selected target values")
+            entered[item["sample_id"]] = values
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=rec_fields)
+        writer.writeheader()
+        for row in recommendations:
+            writer.writerow({**row, **entered[row["sample_id"]]})
+        csv_text = stream.getvalue()
+    fields, rows, complete = validate_upload(csv_text, catalog_path, targets, expected)
+    if complete != len(rows) or len(rows) != len(recommendations):
+        raise ValueError("Every recommended target must be filled exactly once")
+    audit = run_dir / "feedback_uploads"
+    audit.mkdir(exist_ok=True)
+    (audit / f"round_{round_id}_uploaded.csv").write_text(csv_text, encoding="utf-8")
+    write_table(rec_path, fields, rows)
+    return rows
 
 
 def synchronize_feedback(run_dir: Path, design_dir: Path, targets: list[str], current_round: int):

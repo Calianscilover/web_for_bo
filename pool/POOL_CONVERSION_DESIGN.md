@@ -94,6 +94,7 @@ lithium_salts
 functional_additives
 source_row
 presence_pattern
+salt_molality_mol_kg
 compound_0
 smiles_0
 mass_ratio_0
@@ -115,6 +116,11 @@ SMP_a13f...,CG_82c4...,NDFA,LiDFOB,,1,LiDFOB,F[B-]1(OC(C(O1)=O)=O)F.[Li+],0.1916
 `solvents`、`lithium_salts` 和 `functional_additives` 只列出 ratio 大于容差的活性
 组分，多个组分使用分号连接。组分顺序以 `config_snapshot.json` 为准，不依赖
 字典或字母表的偶然顺序。
+
+`salt_molality_mol_kg` 是全部主锂盐（`primary_salt`，可为一至两种）的总质量摩尔浓度，由各组分
+`<name>_mass_g` 计算：锂盐摩尔数之和 ÷ 溶剂质量（kg），溶剂只计 `balance_solvent`
+与 `cosolvent`，不计功能添加剂和锂盐添加剂中的 Li⁺。它仅用于展示和记录，不进入
+`pool_features.csv`，也不参与 `sample_id`。
 
 ### 4.3 `pool_manifest.json`
 

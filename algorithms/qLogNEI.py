@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 import numpy as np
 import torch
+from acquisitions import ACQUISITIONS, DEFAULT_ACQUISITION, PARAMETERS
 from bo_utils import (existing_recommendation_path, fit_model_data,
                       load_experiment_data, predict_candidates,
                       recommendation, recommendation_path, record_training,
@@ -36,7 +37,14 @@ def parse_args():
     parser.add_argument("--mc-samples", type=int, default=256)
     parser.add_argument("--pool-batch-size", type=int, default=128)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--acquisition", choices=list(ACQUISITIONS["single"]),
+                        default=DEFAULT_ACQUISITION["single"])
+    parser.add_argument("--ucb-beta", type=float, default=PARAMETERS["ucb_beta"]["default"],
+                        help="Exploration weight for --acquisition qucb")
     args = parser.parse_args()
+    beta = PARAMETERS["ucb_beta"]
+    if not (np.isfinite(args.ucb_beta) and beta["min"] <= args.ucb_beta <= beta["max"]):
+        parser.error(f"ucb-beta must be within {beta['min']}–{beta['max']}")
     if not np.isfinite(args.lengthscale_init) or args.lengthscale_init <= 0:
         parser.error("lengthscale-init must be finite and positive")
     if args.fit_maxiter <= 0:

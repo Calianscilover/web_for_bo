@@ -6,6 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ALGORITHMS = ROOT / "algorithms"
+if str(ALGORITHMS) not in sys.path:
+    sys.path.insert(0, str(ALGORITHMS))
+from acquisitions import (  # noqa: E402
+    ACQUISITIONS, DEFAULT_ACQUISITION, PARAMETERS, catalog as acquisition_catalog)
 
 
 def command_for(state: dict, run_dir: Path, design_dir: Path) -> list[str]:
@@ -15,14 +19,32 @@ def command_for(state: dict, run_dir: Path, design_dir: Path) -> list[str]:
                "--experiment", str(design_dir / "experiment.csv"), "--pool",
                str(design_dir / "converted" / "pool_catalog.csv"), "--output", str(run_dir),
                "--batch-size", str(state["batch_size"]), "--mc-samples", str(state["mc_samples"]),
-               "--fit-maxiter", str(state["fit_maxiter"]), "--pool-batch-size", "128",
-               "--seed", str(state["seed"])]
+               "--fit-maxiter", str(state["fit_maxiter"]),
+               "--pool-batch-size", str(state.get("pool_batch_size", 128)),
+               "--seed", str(state["seed"]),
+               "--feature-basis", state.get("feature_basis", "mass"),
+               "--kernel", state.get("kernel", "default"),
+               "--matern-nu", str(state.get("matern_nu", 2.5)),
+               "--ard" if state.get("ard", True) else "--no-ard",
+               "--lengthscale-init", str(state.get("lengthscale_init", 0.5))]
+    acquisition = state.get("acquisition") or DEFAULT_ACQUISITION[mode]
+    command += ["--acquisition", acquisition]
+    for name in ACQUISITIONS[mode][acquisition]["params"]:
+        command += [f"--{name.replace('_', '-')}",
+                    str(state.get(name, PARAMETERS[name]["default"]))]
+    noise = [str(value) for value in state.get("noise_std") or []]
     if mode == "single":
         command += ["--target", state["targets"][0]]
         if state["directions"][0] == "min":
             command.append("--minimize")
+        if noise:
+            command += ["--noise-std", noise[0]]
     else:
         command += ["--targets", *state["targets"], "--directions", *state["directions"]]
+        if noise:
+            command += ["--noise-std", *noise]
+        if state.get("ref_point"):
+            command += ["--ref-point", *(str(value) for value in state["ref_point"])]
     return command
 
 

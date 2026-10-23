@@ -157,7 +157,7 @@ def build_visualization(run_dir, experiment_path=None):
                          "simulated_count": sum(record["source"] == "simulated"
                                                 for record in observed)})
     pareto = []
-    if len(targets) == 2:
+    if len(targets) >= 2:
         signs = torch.tensor([-1 if d == "min" else 1 for d in directions])
         values = torch.tensor([record["values"] for record in records], dtype=torch.double)
         mask = is_non_dominated(values * signs)

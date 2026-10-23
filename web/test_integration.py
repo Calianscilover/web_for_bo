@@ -27,6 +27,13 @@ CONFIG = {
 
 
 class LocalFlow(unittest.TestCase):
+    def test_acquisition_catalog_lists_presets_per_mode(self):
+        presets = self.client.get("/api/v1/acquisitions").get_json()
+        self.assertEqual(presets["defaults"], {"single": "qlognei", "multi": "qlognehvi"})
+        self.assertIn("qucb", [item["id"] for item in presets["single"]])
+        self.assertIn("qlogehvi", [item["id"] for item in presets["multi"]])
+        self.assertEqual(presets["parameters"]["ucb_beta"]["default"], 2.0)
+
     def test_exact_two_objective_hypervolume(self):
         records = [{"values": [2, 1]}, {"values": [1, 2]}, {"values": [0.5, 0.5]}]
         self.assertAlmostEqual(hypervolume(records, ["max", "max"], [0, 0]), 3)
@@ -74,14 +81,31 @@ class LocalFlow(unittest.TestCase):
                                   json={"targets": ["Conductivity"], "csv": stream.getvalue()})
         self.assertEqual(upload.status_code, 200, upload.get_json())
         self.assertEqual(upload.get_json()["complete"], 4)
+        base = {"mode": "single", "targets": ["Conductivity"], "directions": ["max"],
+                "batch_size": 2, "mc_samples": 16, "fit_maxiter": 10}
+        for invalid, message in (({"acquisition": "qlognehvi"}, "单目标采集函数只能是"),
+                                 ({"acquisition": "qucb", "ucb_beta": "-1"}, "UCB β需在"),
+                                 ({"acquisition": "qucb", "ucb_beta": ""}, "UCB β必须是数字")):
+            rejected = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                                        json={**base, **invalid})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertIn(message, rejected.get_json()["message"])
         run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
-                               json={"mode": "single", "targets": ["Conductivity"],
-                                     "directions": ["max"], "batch_size": 2,
-                                     "mc_samples": 16, "fit_maxiter": 10})
+                               json={**base, "acquisition": "qucb", "ucb_beta": "1.5",
+                                     "kernel": "matern", "matern_nu": 1.5, "ard": False,
+                                     "lengthscale_init": "0.3", "noise_std": ["0.05"],
+                                     "feature_basis": "mole", "pool_batch_size": 64})
         self.assertEqual(run.status_code, 202, run.get_json())
         run_id = run.get_json()["run_id"]
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
         self.assertEqual(info["round"], 1)
+        summary = info["summary"]
+        self.assertEqual((summary["kernel"], summary["matern_nu"], summary["ard"],
+                          summary["lengthscale_init"], summary["noise_std"],
+                          summary["pool_batch_size"]), ("matern", 1.5, False, 0.3, 0.05, 64))
+        self.assertEqual((summary["acquisition"], summary["acquisition_params"]),
+                         ("qucb", {"ucb_beta": 1.5}))
+        self.assertTrue(all(name.startswith("mole_ratio_") for name in summary["feature_names"]))
         first_visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
         self.assertEqual(first_visual["mode"], "single")
         self.assertEqual(len(first_visual["fit"]["Conductivity"]["points"]), 4)
@@ -118,6 +142,256 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual(third_visual["counts"]["simulated_feedback"], 2)
         self.assertEqual(third_visual["counts"]["real_feedback"], 2)
         self.assertEqual(len(third_visual["progress"]), 3)
+        self.assertEqual(self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate",
+                                          json={}).status_code, 200)
+        simulated = [record["values"] for record in self.client.get(
+            f"/api/v1/optimization-runs/{run_id}/visualization").get_json()["measurements"]
+            if record["source"] == "simulated"]
+        self.assertEqual(len(simulated), 4)
+        self.assertNotEqual(sorted(simulated[:2]), sorted(simulated[2:]))
+
+    def test_additive_pool_and_recipe_import(self):
+        config = dict(CONFIG, additives=[{"name": "VC", "smiles": "O=C1OC=CO1",
+                                          "final_mass_fraction_bounds": [0.01, 0.05]}])
+        design_id = self.client.post("/api/v1/designs", json=config).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        fields, rows = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual(rows[0]["compound_3"], "VC")
+        span = self.client.post("/api/v1/salt-molality-range", json=config).get_json()
+        weight, = span["molecular_weights"]
+        self.assertAlmostEqual(span["low"], 1000 * 0.1 / (weight * 0.89))
+        self.assertAlmostEqual(span["high"], 1000 * 0.3 / (weight * 0.65))
+        for row in rows:
+            molality = float(row["salt_molality_mol_kg"])
+            self.assertTrue(span["low"] - 1e-9 <= molality <= span["high"] + 1e-9)
+            self.assertEqual(row["functional_additives"], "VC")
+            self.assertTrue(0.01 - 1e-12 <= float(row["mass_ratio_3"]) <= 0.05 + 1e-12)
+            solvent_total = float(row["mass_ratio_1"]) + float(row["mass_ratio_2"])
+            self.assertTrue(0.5 - 1e-12 <= float(row["mass_ratio_1"]) / solvent_total <= 1)
+
+        template = self.client.get(f"/api/v1/designs/{design_id}/recipe-template?target=Conductivity")
+        template_text = template.get_data(as_text=True).lstrip("\ufeff")
+        header, *examples = template_text.strip().splitlines()
+        self.assertEqual(header, "experiment_id,LiDFOB_mass_g,NDFA_mass_g,TTE_mass_g,VC_mass_g,Conductivity")
+        self.assertEqual([line.split(",")[0] for line in examples], ["EXAMPLE-01", "EXAMPLE-02"])
+        untouched = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                     json={"targets": ["Conductivity"], "csv": template_text})
+        self.assertEqual(untouched.status_code, 400)
+        self.assertEqual(untouched.get_json()["message"], "没有可导入的实验数据")
+        self.assertIn("2 行 EXAMPLE", untouched.get_json()["details"][0])
+        _, pool = server.table(directory / "pool.csv")
+        existing = [pool[0][f"{name}_mass_g"] for name in ("LiDFOB", "NDFA", "TTE", "VC")]
+        recipes = "\n".join([
+            template_text.strip(),
+            "E1," + ",".join(existing) + ",3.5",
+            "E2,1.0,2.8,1.0,0.2,4",
+            "E2b,1.0,2.8,1.0,0.2,6",
+            "E3,2.0,3.0,,,2.5",
+            ",,,,,",
+            "",
+        ])
+        unknown = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"],
+                                         "csv": "experiment_id,LiDFOB_mass_g,FEC_mass_g,Conductivity\nX,1,1,1\n"})
+        self.assertEqual(unknown.status_code, 400)
+        self.assertIn("FEC_mass_g", unknown.get_json()["details"][0])
+        self.assertIn("LiDFOB, NDFA, TTE, VC", unknown.get_json()["details"][1])
+        invalid = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes", json={
+            "targets": ["Conductivity"],
+            "csv": "experiment_id,LiDFOB_mass_g,NDFA_mass_g,TTE_mass_g,VC_mass_g,Conductivity\n"
+                   "A,1,abc,1,0,3\nB,1,-2,1,0,3\nC,,,,,3\nD,1,1,1,0,3,9\nE,1,1,1,0,3\n"}).get_json()
+        self.assertEqual(invalid["message"], "有 4 处数据不符合规范，本次未导入任何数据")
+        self.assertEqual([detail.split("：")[0] for detail in invalid["details"][:4]],
+                         ["第 2 行 NDFA_mass_g", "第 3 行 NDFA_mass_g", "第 4 行", "第 5 行"])
+        self.assertFalse((directory / "experiment.csv").exists())
+        no_target = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes", json={
+            "targets": ["logCE"], "csv": recipes}).get_json()
+        self.assertEqual(no_target["message"], "缺少目标列：logCE")
+        self.assertIn("Conductivity", no_target["details"][1])
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        summary = imported.get_json()
+        self.assertEqual((summary["recipes"], summary["samples"], summary["matched_existing"],
+                          summary["added"], summary["out_of_bounds"], summary["replicates_merged"]),
+                         (4, 3, 1, 2, 1, 1))
+        self.assertEqual(summary["skipped_examples"], 2)
+        self.assertEqual(summary["pool_size"], len(rows) + 2)
+        _, mapping = server.table(directory / "experiment_mapping.csv")
+        by_id = {row["experiment_id"]: row for row in mapping}
+        self.assertEqual(by_id["E1"]["sample_id"], rows[0]["sample_id"])
+        self.assertEqual(by_id["E1"]["pool_status"], "matched_existing")
+        self.assertEqual(by_id["E2"]["sample_id"], by_id["E2b"]["sample_id"])
+        self.assertEqual(by_id["E2"]["within_design_bounds"], "true")
+        self.assertEqual(by_id["E3"]["within_design_bounds"], "false")
+        self.assertNotEqual(by_id["E3"]["chem_group_id"], by_id["E2"]["chem_group_id"])
+        _, experiment = server.table(directory / "experiment.csv")
+        values = {row["sample_id"]: float(row["Conductivity"]) for row in experiment}
+        self.assertEqual(values[by_id["E2"]["sample_id"]], 5)
+        e2 = next(row for row in experiment if row["sample_id"] == by_id["E2"]["sample_id"])
+        self.assertAlmostEqual(float(e2["salt_molality_mol_kg"]), 1000 * 1.0 / weight / 3.8)
+        _, grown = server.table(directory / "pool.csv")
+        self.assertAlmostEqual(float(grown[-2]["salt_molality_mol_kg"]),
+                               float(e2["salt_molality_mol_kg"]))
+        again = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                 json={"targets": ["Conductivity"], "csv": recipes}).get_json()
+        self.assertEqual((again["added"], again["pool_size"]), (0, summary["pool_size"]))
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual([row["sample_id"] for row in catalog[:len(rows)]],
+                         [row["sample_id"] for row in rows])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        info = self.wait(f"/api/v1/optimization-runs/{run.get_json()['run_id']}")
+        self.assertEqual(info["round"], 1)
+        blocked = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(blocked.status_code, 400)
+
+    def test_two_salt_pool_import_and_round(self):
+        config = {key: value for key, value in CONFIG.items() if key != "salt"}
+        config["salts"] = [
+            dict(CONFIG["salt"], final_mass_fraction_bounds=[0, 0.2]),
+            {"name": "LiFSI", "smiles": "[Li+].O=S(=O)(F)[N-]S(=O)(=O)F",
+             "final_mass_fraction_bounds": [0, 0.15]},
+        ]
+        config["sampling"] = {"candidate_power": 6, "seed": 42}
+        design_id = self.client.post("/api/v1/designs", json=config).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        _, rows = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual((rows[0]["compound_0"], rows[0]["compound_1"]), ("LiDFOB", "LiFSI"))
+        present = {(float(row["mass_ratio_0"]) > 0, float(row["mass_ratio_1"]) > 0) for row in rows}
+        self.assertEqual(present, {(True, True), (True, False), (False, True)})
+        span = self.client.post("/api/v1/salt-molality-range", json=config).get_json()
+        weights = span["molecular_weights"]
+        for row in rows:
+            salts = [float(row[f"mass_ratio_{i}"]) for i in (0, 1)]
+            solvent = float(row["mass_ratio_2"]) + float(row["mass_ratio_3"])
+            self.assertEqual(row["lithium_salts"],
+                             ";".join(name for name, x in zip(("LiDFOB", "LiFSI"), salts) if x > 0))
+            self.assertAlmostEqual(float(row["salt_molality_mol_kg"]),
+                                   1000 * sum(x / w for x, w in zip(salts, weights)) / solvent)
+            self.assertTrue(span["low"] - 1e-9 <= float(row["salt_molality_mol_kg"])
+                            <= span["high"] + 1e-9)
+        recipes = ("experiment_id,LiDFOB_mass_g,LiFSI_mass_g,NDFA_mass_g,TTE_mass_g,Conductivity\n"
+                   "A,0.5,0.4,3.0,1.1,4\nB,0.5,1.0,2.5,1.0,5\n")
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": recipes})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        _, mapping = server.table(directory / "experiment_mapping.csv")
+        self.assertEqual([row["within_design_bounds"] for row in mapping], ["true", "false"])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        run_id = run.get_json()["run_id"]
+        info = self.wait(f"/api/v1/optimization-runs/{run_id}")
+        self.assertEqual(info["round"], 1)
+        self.assertEqual((info["summary"]["acquisition"], info["summary"]["acquisition_params"]),
+                         ("qlognei", {}))
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertEqual(len(rec["rows"]), 2)
+
+    def test_five_salt_fixed_spaces_import_and_round(self):
+        config = {key: value for key, value in CONFIG.items() if key != "salt"}
+        extra = [
+            ("LiFSI", "[Li+].O=S(=O)(F)[N-]S(=O)(=O)F"),
+            ("LiPF6", "[Li+].F[P-](F)(F)(F)(F)F"),
+            ("LiBF4", "[Li+].F[B-](F)(F)F"),
+            ("LiNO3", "[Li+].[O-][N+](=O)[O-]"),
+        ]
+        config["salts"] = [dict(CONFIG["salt"], final_mass_fraction_bounds=[.02, .25])]
+        config["salts"] += [{"name": name, "smiles": smiles,
+                             "final_mass_fraction_bounds": [.02, .25]} for name, smiles in extra]
+        config["solvents"] = [dict(item, pool_mass_fraction_bounds=[.1, .8])
+                              for item in CONFIG["solvents"]]
+        config["solvents"].append({"name": "DME", "smiles": "COCCOC",
+                                    "pool_mass_fraction_bounds": [.1, .8]})
+        config["salt_selection"] = {"sizes": [1, 2]}
+        config["sampling"] = {"candidate_power": 7, "seed": 42, "require_all_solvents": True}
+        response = self.client.post("/api/v1/designs", json=config)
+        self.assertEqual(response.status_code, 202)
+        design_id = response.get_json()["design_id"]
+        info = self.wait(f"/api/v1/designs/{design_id}")
+        self.assertEqual(len(info["counts"]["salt_spaces"]), 15)
+        self.assertEqual(info["counts"]["generated"], 128)
+        self.assertTrue(all(space["feasible"] > 0 for space in info["counts"]["salt_spaces"]))
+        span = self.client.post("/api/v1/salt-molality-range", json=config)
+        self.assertEqual(span.status_code, 200)
+        directory = server.OUTPUT / "designs" / design_id
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        for row in catalog:
+            self.assertIn(sum(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5)), (1, 2))
+            self.assertTrue(all(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5, 8)))
+        text = self.client.get(f"/api/v1/designs/{design_id}/experiment-template?target=Conductivity"
+                               ).get_data(as_text=True).lstrip("\ufeff")
+        recipes = list(csv.DictReader(io.StringIO(text)))
+        selected = []
+        for space in info["counts"]["salt_spaces"]:
+            for row in recipes:
+                active = [salt["name"] for salt in config["salts"]
+                          if float(row[f"{salt['name']}_mass_g"] or 0) > 0]
+                if active == space["salts"]:
+                    selected.append(dict(row, Conductivity=str(2 + len(selected) / 5)))
+                    break
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=list(recipes[0]))
+        writer.writeheader()
+        writer.writerows(selected)
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": stream.getvalue()})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        self.assertEqual(imported.get_json()["out_of_bounds"], 0)
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={"mode": "single", "targets": ["Conductivity"],
+                                     "directions": ["max"], "batch_size": 2,
+                                     "mc_samples": 16, "fit_maxiter": 10})
+        self.assertEqual(run.status_code, 202)
+        run_id = run.get_json()["run_id"]
+        info = self.wait(f"/api/v1/optimization-runs/{run_id}")
+        self.assertEqual(len(info["summary"]["feature_names"]), 8)
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertEqual(len(rec["rows"]), 2)
+        self.assertTrue(all(sum(float(row[f"mass_ratio_{i}"]) > 0 for i in range(5)) in (1, 2)
+                            for row in rec["rows"]))
+
+    def test_pool_template_uses_recipe_layout(self):
+        design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        directory = server.OUTPUT / "designs" / design_id
+        text = self.client.get(f"/api/v1/designs/{design_id}/experiment-template?target=Conductivity"
+                               ).get_data(as_text=True).lstrip("\ufeff")
+        rows = list(csv.DictReader(io.StringIO(text)))
+        self.assertEqual(list(rows[0]), ["experiment_id", "LiDFOB_mass_g", "NDFA_mass_g",
+                                         "TTE_mass_g", "Conductivity"])
+        _, catalog = server.table(directory / "converted" / "pool_catalog.csv")
+        self.assertEqual([row["experiment_id"] for row in rows], [row["sample_id"] for row in catalog])
+        for i, row in enumerate(rows[:3]):
+            row["Conductivity"] = str(3 + i)
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+        imported = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                    json={"targets": ["Conductivity"], "csv": stream.getvalue()})
+        self.assertEqual(imported.status_code, 200, imported.get_json())
+        summary = imported.get_json()
+        self.assertEqual((summary["matched_existing"], summary["added"], summary["complete"],
+                          summary["skipped_unmeasured"], summary["pool_size"]),
+                         (3, 0, 3, len(rows) - 3, len(rows)))
+        _, experiment = server.table(directory / "experiment.csv")
+        self.assertEqual([row["sample_id"] for row in experiment],
+                         [row["sample_id"] for row in catalog[:3]])
+        seven = (server.ROOT / "pool" / "converted" / "experiment.csv").read_text(encoding="utf-8-sig")
+        foreign = self.client.post(f"/api/v1/designs/{design_id}/experiment-recipes",
+                                   json={"targets": ["Conductivity"], "csv": seven})
+        self.assertEqual(foreign.status_code, 400)
+        self.assertIn("FEC", foreign.get_json()["details"][0])
 
     def test_multi_objective_recommendation(self):
         response = self.client.post("/api/v1/designs", json=CONFIG)
@@ -134,10 +408,23 @@ class LocalFlow(unittest.TestCase):
                                   json={"targets": ["Conductivity", "LCE"],
                                         "csv": stream.getvalue()})
         self.assertEqual(upload.status_code, 200, upload.get_json())
+        base = {"mode": "multi", "targets": ["Conductivity", "LCE"],
+                "directions": ["max", "max"], "batch_size": 2, "mc_samples": 16, "fit_maxiter": 10}
+        for invalid, message in (({"ard": False}, "关闭 ARD"),
+                                 ({"noise_std": ["0.1", ""]}, "观测噪声标准差需为每个目标"),
+                                 ({"noise_std": ["0.1", "-1"]}, "观测噪声标准差必须是正数"),
+                                 ({"lengthscale_init": 0}, "初始长度尺度"),
+                                 ({"kernel": "linear"}, "核函数"),
+                                 ({"ref_point": ["abc", "1"]}, "超体积参考点必须是数字"),
+                                 ({"pool_batch_size": 8}, "候选评分批大小"),
+                                 ({"acquisition": "qucb"}, "多目标采集函数只能是")):
+            rejected = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                                        json={**base, **invalid})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertIn(message, rejected.get_json()["message"])
         run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
-                               json={"mode": "multi", "targets": ["Conductivity", "LCE"],
-                                     "directions": ["max", "max"], "batch_size": 2,
-                                     "mc_samples": 16, "fit_maxiter": 10})
+                               json={**base, "kernel": "rbf", "noise_std": ["0.1", "0.5"],
+                                     "ref_point": ["2", "-1.5"], "acquisition": "qlogehvi"})
         self.assertEqual(run.status_code, 202, run.get_json())
         run_id = run.get_json()["run_id"]
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
@@ -146,6 +433,9 @@ class LocalFlow(unittest.TestCase):
         self.assertEqual(first_visual["mode"], "multi")
         self.assertGreaterEqual(first_visual["progress"][0]["value"], 0)
         self.assertEqual(first_visual["reference_point"], info["summary"]["ref_point"])
+        self.assertEqual(info["summary"]["ref_point"], [2.0, -1.5])
+        self.assertEqual((info["summary"]["kernel"], info["summary"]["noise_std"]), ("rbf", [0.1, 0.5]))
+        self.assertEqual(info["summary"]["acquisition"], "qlogehvi")
         rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
         self.assertEqual(len(rec["rows"]), 2)
         self.assertTrue(all(row["Conductivity"] == row["LCE"] == "" for row in rec["rows"]))
@@ -169,6 +459,58 @@ class LocalFlow(unittest.TestCase):
         info = self.wait(f"/api/v1/optimization-runs/{run_id}")
         self.assertEqual(info["round"], 2)
         self.assertGreaterEqual(len(self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()["pareto"]), 1)
+        self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate", json={})
+        visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
+        points = {record["sample_id"]: record["values"] for record in visual["measurements"]}
+        self.assertEqual(len(points), 9)
+        front = {sample_id for sample_id, (x, y) in points.items()
+                 if not any(a >= x and b >= y and (a, b) != (x, y) for a, b in points.values())}
+        self.assertEqual({record["sample_id"] for record in visual["pareto"]}, front)
+
+    def test_three_objective_recommendation(self):
+        design_id = self.client.post("/api/v1/designs", json=CONFIG).get_json()["design_id"]
+        self.wait(f"/api/v1/designs/{design_id}")
+        fields, rows = server.table(server.OUTPUT / "designs" / design_id /
+                                    "converted" / "pool_catalog.csv")
+        targets = ["Conductivity", "LCE", "Viscosity"]
+        stream = io.StringIO()
+        writer = csv.DictWriter(stream, fieldnames=fields + targets)
+        writer.writeheader()
+        for i, row in enumerate(rows[:5]):
+            writer.writerow(dict(row, Conductivity=str(3 + i / 3), LCE=str(60 - i * 2),
+                                 Viscosity=str(4 + (i * 3) % 5)))
+        upload = self.client.post(f"/api/v1/designs/{design_id}/observations",
+                                  json={"targets": targets, "csv": stream.getvalue()})
+        self.assertEqual(upload.status_code, 200, upload.get_json())
+        base = {"mode": "multi", "targets": targets, "directions": ["max", "max", "min"],
+                "batch_size": 2, "mc_samples": 16, "fit_maxiter": 10}
+        for invalid, message in (({"targets": targets + ["A", "B"],
+                                   "directions": ["max"] * 5}, "2 到 4 个目标列"),
+                                 ({"mode": "single"}, "单目标请填写 1 个"),
+                                 ({"directions": ["max", "max"]}, "优化方向"),
+                                 ({"ref_point": ["1", "2"]}, "超体积参考点需为每个目标")):
+            rejected = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                                        json={**base, **invalid})
+            self.assertEqual(rejected.status_code, 400)
+            self.assertIn(message, rejected.get_json()["message"])
+        run = self.client.post(f"/api/v1/designs/{design_id}/optimization-runs",
+                               json={**base, "ref_point": ["2", "50", "10"],
+                                     "acquisition": "qlognparego"})
+        self.assertEqual(run.status_code, 202, run.get_json())
+        run_id = run.get_json()["run_id"]
+        info = self.wait(f"/api/v1/optimization-runs/{run_id}")
+        self.assertEqual(info["round"], 1)
+        self.assertEqual(info["summary"]["ref_point"], [2.0, 50.0, 10.0])
+        self.assertEqual(info["summary"]["directions"], ["max", "max", "min"])
+        self.assertEqual(info["summary"]["acquisition"], "qlognparego")
+        rec = self.client.get(f"/api/v1/optimization-runs/{run_id}/recommendations/1").get_json()
+        self.assertTrue(all(row[name] == "" for row in rec["rows"] for name in targets))
+        self.assertEqual(self.client.post(f"/api/v1/optimization-runs/{run_id}/simulate",
+                                          json={}).status_code, 200)
+        visual = self.client.get(f"/api/v1/optimization-runs/{run_id}/visualization").get_json()
+        self.assertEqual((visual["mode"], visual["targets"]), ("multi", targets))
+        self.assertEqual(len(visual["progress"]), 2)
+        self.assertGreaterEqual(len(visual["pareto"]), 1)
 
 
 if __name__ == "__main__":
